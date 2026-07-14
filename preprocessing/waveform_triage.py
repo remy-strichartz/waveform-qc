@@ -762,28 +762,47 @@ def classify_events(waveforms: np.ndarray, baseline: float, sigma: float,
 # Diagnostics + plots (raw waveforms; subtract the global baseline only for display)
 # ===========================================================================
 
-def print_diagnostics(waveforms, baseline, sigma, sat, pileup, noise, clean, info,
-                      polarity="positive") -> None:
-    N, L = waveforms.shape
-    row_max = waveforms.max(axis=1)
+def print_diagnostics(source, dataset, n_events, length, baseline, sigma, polarity,
+                      counts, peak_min, peak_max, rail_thresh, rail_found,
+                      pulse_lo, pulse_hi, peak_med=None, n_sample=None) -> None:
+    """The ONE triage summary block -- both the in-memory triage() and the streaming
+    stream_triage() print through here, so the two paths report the same fields.
+
+    The PULSE WINDOW and the SATURATION RAIL are part of the summary, not just the
+    INFO log: auto-window is on by default and the rail is auto-detected, so the
+    window and rail actually used are results of the run, and a summary that omits
+    them cannot be read on its own.
+
+    `peak_med` is optional (the streaming path tracks only a running min/max, never
+    holding the run whole); `n_sample` is the streaming path's prep-sample size and
+    marks the block as streaming when given.
+    """
     print("\n" + "=" * 64)
-    print("Waveform triage diagnostics")
+    print("Waveform triage diagnostics" + ("  (streaming)" if n_sample is not None else ""))
     print("=" * 64)
-    print(f"Source file:        {info.get('source')}")
-    if "dataset" in info:
-        print(f"Dataset:            {info['dataset']}")
-    print(f"Events:             {N:,}")
-    print(f"Window length:      {L} samples")
+    print(f"Source file:        {source}")
+    if dataset:
+        print(f"Dataset:            {dataset}")
+    print(f"Events:             {n_events:,}")
+    print(f"Window length:      {length} samples")
+    print(f"Pulse window:       [{pulse_lo}, {pulse_hi})")
+    if n_sample is not None:
+        print(f"Prep sample:        first {n_sample:,} events"
+              f"{'  (= whole file)' if n_sample >= n_events else ''}")
     print(f"Polarity:           {polarity}"
           f"{'  (reflected about baseline for analysis)' if polarity == 'negative' else ''}")
     print(f"Global baseline:    {baseline:.4g} ADC")
     print(f"Global noise sigma: {sigma:.4g} ADC")
-    print(f"Peak ADC  min/med/max:  {row_max.min():.0f} / {np.median(row_max):.0f} / {row_max.max():.0f}")
+    if peak_med is None:
+        print(f"Peak ADC  min/max:      {peak_min:.0f} / {peak_max:.0f}")
+    else:
+        print(f"Peak ADC  min/med/max:  {peak_min:.0f} / {peak_med:.0f} / {peak_max:.0f}")
+    print(f"Saturation rail:    {rail_thresh:.0f}"
+          f"{'' if rail_found else '  (no rail; not cut)'}")
     print("-" * 64)
-    print(f"  SATURATED:  {int(sat.sum()):>7,}  ({100*sat.mean():5.1f}%)")
-    print(f"  PILEUP:     {int(pileup.sum()):>7,}  ({100*pileup.mean():5.1f}%)")
-    print(f"  NOISE:      {int(noise.sum()):>7,}  ({100*noise.mean():5.1f}%)")
-    print(f"  CLEAN:      {int(clean.sum()):>7,}  ({100*clean.mean():5.1f}%)")
+    for label in ("SATURATED", "PILEUP", "NOISE", "CLEAN"):
+        c = int(counts[label])
+        print(f"  {label + ':':<11}{c:>10,}  ({(100 * c / n_events if n_events else 0.0):5.1f}%)")
     print("=" * 64 + "\n")
 
 
@@ -793,9 +812,15 @@ def plot_overview(waveforms, baseline, sat, pileup, noise, clean,
     import matplotlib.pyplot as plt
     N, L = waveforms.shape
     row_max = waveforms.max(axis=1)
-    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
+    # Three panels, each showing something the printed summary cannot: where the rail
+    # sits in the peak distribution, the event-level spread of the clean pulses, and
+    # how the four classes separate in shape.  (There is deliberately no class-count
+    # bar chart: print_diagnostics already tabulates those four numbers, and a bar
+    # chart annotated with them adds nothing -- a rare class like PILEUP at 0.0%
+    # renders as an invisible sliver, so the table is strictly the better view.)
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5))
 
-    ax = axes[0, 0]
+    ax = axes[0]
     ax.hist(row_max, bins=200, color="C0", alpha=0.8)
     rail_label = (f"saturation = {saturation_adc:.0f}" if rail_found
                   else f"99.99th pct = {saturation_adc:.0f} (no rail; not cut)")
@@ -804,16 +829,7 @@ def plot_overview(waveforms, baseline, sat, pileup, noise, clean,
     ax.set(xlabel="Peak ADC", ylabel="Events", title="Peak amplitude distribution")
     ax.legend(); ax.grid(True, alpha=0.3)
 
-    ax = axes[0, 1]
-    names = ["Clean", "Saturated", "Pileup", "Noise"]
-    counts = [int(clean.sum()), int(sat.sum()), int(pileup.sum()), int(noise.sum())]
-    ax.bar(names, counts, color=["C2", "C3", "C1", "C7"], alpha=0.85)
-    for j, c in enumerate(counts):
-        ax.text(j, c, f"{c:,}\n{100*c/N:.1f}%", ha="center", va="bottom", fontsize=9)
-    ax.set(ylabel="Events", title="Event classification")
-    ax.grid(True, axis="y", alpha=0.3)
-
-    ax = axes[1, 0]
+    ax = axes[1]
     rng = np.random.default_rng(0)
     idx = np.flatnonzero(clean)
     if idx.size:
@@ -823,7 +839,7 @@ def plot_overview(waveforms, baseline, sat, pileup, noise, clean,
     ax.set(xlabel="Sample", ylabel="ADC (baseline-sub.)", title="Clean waveforms (sample of 200)")
     ax.legend(); ax.grid(True, alpha=0.3)
 
-    ax = axes[1, 1]
+    ax = axes[2]
     for mask, name, col in ((clean, "Clean", "C2"), (sat, "Saturated", "C3"),
                             (pileup, "Pileup", "C1"), (noise, "Noise", "C7")):
         idx = np.flatnonzero(mask)
@@ -1025,8 +1041,14 @@ def triage(input_path, output_dir, saturation_adc, pulse_lo, pulse_hi,
     noise_only = noise_raw & ~pileup_only & ~sat_only
     clean = ~pileup_only & ~sat_only & ~noise_only
 
-    print_diagnostics(wf, baseline, sigma, sat_only, pileup_only, noise_only, clean,
-                      info, polarity)
+    row_max = wf.max(axis=1)
+    print_diagnostics(
+        info.get("source"), info.get("dataset"), len(raw), wf.shape[1], baseline, sigma,
+        polarity,
+        {"SATURATED": int(sat_only.sum()), "PILEUP": int(pileup_only.sum()),
+         "NOISE": int(noise_only.sum()), "CLEAN": int(clean.sum())},
+        float(row_max.min()), float(row_max.max()), sat_thresh, rail_found,
+        pulse_lo, pulse_hi, peak_med=float(np.median(row_max)))
 
     # `output_dir` is the already-resolved per-run results folder (see main); every output of
     # this run -- exported class files, plots and diagnostics -- lands in it, rather than
@@ -1184,33 +1206,6 @@ class _AppendWriter:
         self.f.close()
 
 
-def _print_stream_diagnostics(source, dataset, n, length, baseline, sigma, polarity,
-                              counts, peak_min, peak_max, rail_thresh, rail_found,
-                              pulse_lo, pulse_hi, n_sample) -> None:
-    print("\n" + "=" * 64)
-    print("Waveform triage diagnostics (streaming)")
-    print("=" * 64)
-    print(f"Source file:        {source}")
-    print(f"Dataset:            {dataset}")
-    print(f"Events:             {n:,}")
-    print(f"Window length:      {length} samples")
-    print(f"Pulse window:       [{pulse_lo}, {pulse_hi})")
-    print(f"Prep sample:        first {n_sample:,} events"
-          f"{'  (= whole file)' if n_sample >= n else ''}")
-    print(f"Polarity:           {polarity}"
-          f"{'  (reflected about baseline for analysis)' if polarity == 'negative' else ''}")
-    print(f"Global baseline:    {baseline:.4g} ADC")
-    print(f"Global noise sigma: {sigma:.4g} ADC")
-    print(f"Peak ADC  min/max:  {peak_min:.0f} / {peak_max:.0f}")
-    print(f"Saturation rail:    {rail_thresh:.0f}"
-          f"{'' if rail_found else ' (no rail; not cut)'}")
-    print("-" * 64)
-    for label in ("SATURATED", "PILEUP", "NOISE", "CLEAN"):
-        c = counts[label]
-        print(f"  {label + ':':<11}{c:>10,}  ({(100 * c / n if n else 0.0):5.1f}%)")
-    print("=" * 64 + "\n")
-
-
 def stream_triage(input_path, output_dir, saturation_adc, pulse_lo, pulse_hi,
                   pileup_prominence, noise_prominence, extra_frac, extra_min_sigma,
                   rail_tol, min_separation, max_extra_pulses, post_pulse_veto,
@@ -1327,9 +1322,9 @@ def stream_triage(input_path, output_dir, saturation_adc, pulse_lo, pulse_hi,
 
     if peak_min == np.inf:                              # empty file guard
         peak_min = peak_max = 0.0
-    _print_stream_diagnostics(input_path, name, n_events, length, baseline, sigma,
-                              polarity, counts, peak_min, peak_max, rail_thresh,
-                              rail_found, pulse_lo, pulse_hi, n_sample)
+    print_diagnostics(input_path, name, n_events, length, baseline, sigma, polarity,
+                      counts, peak_min, peak_max, rail_thresh, rail_found,
+                      pulse_lo, pulse_hi, n_sample=n_sample)
 
     return {"n_total": n_events, "n_clean": counts["CLEAN"],
             "n_saturated": counts["SATURATED"], "n_pileup": counts["PILEUP"],

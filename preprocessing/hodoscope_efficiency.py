@@ -40,10 +40,15 @@ SiPM pulses are positive-going, PMT pulses negative-going; each panel is oriente
 accordingly (reuses waveform_triage's polarity handling) before classification.
 
 Diagnostics (saved as eff_*.png, alongside the project's diag_*/maker_* figures)
-  * eff_dt_coincidence.png  -- top-bottom Delta-t histogram (validates the offset)
-  * eff_class_breakdown.png -- per-panel triage class fractions
-  * eff_noise_residuals.png -- per-panel pre-pulse noise-residual overlay (median/MAD)
-  * eff_sensitivity.png     -- efficiency vs a swept cut parameter (with CI band)
+  * eff_dt_coincidence.png  -- top-bottom Delta-t histogram (validates the offset),
+                               over events where BOTH panels saw a pulse, width quoted
+                               as a robust MAD sigma
+  * eff_noise_residuals.png -- per-panel pre-pulse noise-residual overlay (integer-aligned
+                               bins, MAD sigma vs RMS, non-Gaussian panels flagged)
+  * eff_sensitivity.png     -- efficiency vs a swept cut parameter (with CI band); the
+                               sweep is a SYSTEMATIC and runs even without plots
+The per-panel class breakdown is PRINTED (print_report), not plotted -- a stacked bar of
+that same table hid exactly the small classes (SATURATED / PILEUP) it needed to show.
 
 Usage
 -----
@@ -381,36 +386,69 @@ def _save(fig, out_dir: Path, fname: str, show: bool, save: bool) -> None:
     finish_figure(fig, out_dir / fname if save else None, show)
 
 
-def plot_dt_coincidence(top: PanelResult, bot: PanelResult, coincidence: np.ndarray,
+def plot_dt_coincidence(top: PanelResult, bot: PanelResult,
                         out_dir: Path, show: bool, save: bool) -> dict:
-    """Top-bottom Delta-t (bottom edge - top edge) over coincidence events.
+    """Top-bottom Delta-t (bottom edge - top edge), over events where BOTH panels
+    actually registered a pulse.
 
     This validates the assumed inter-channel offset: a single sharp peak confirms a
     genuine, fixed time-of-flight coincidence; a flat or multi-modal distribution
     would mean the files are mis-aligned or the coincidence is dominated by
-    accidentals.  The offset itself is measured from the data (mean +/- sigma), not
-    checked against an assumed value.
+    accidentals.  The offset itself is measured from the data, not checked against an
+    assumed value.
 
     Timing uses each panel's leading-edge (half-max) crossing rather than the argmax
     peak sample: the edge is immune to the coherent pickup and flat-top saturation that
-    jitter the peak time, so a genuine coincidence shows up as a tighter peak here."""
+    jitter the peak time, so a genuine coincidence shows up as a tighter peak here.
+
+    TWO THINGS THIS PLOT USED TO GET WRONG, both of which inflated the quoted width by
+    ~12x on run00270 (18.50 -> 1.48 samples):
+
+    * It selected on the efficiency DENOMINATOR mask.  Under the default
+      --denominator all that mask is all-ones, so Delta-t was built from every event --
+      including the ~17% where a panel saw NO pulse and its "leading edge" is therefore
+      a noise fluctuation landing anywhere in the record (those events alone have
+      std 42.7, with 24% beyond |Delta-t| > 20).  Delta-t between two panels is only
+      DEFINED when both fired, so the selection is now top.saw_pulse & bot.saw_pulse,
+      independent of how the efficiency denominator is defined.
+    * It quoted mean +/- np.std.  Delta-t keeps hard outliers (marginal pulses, residual
+      mis-picks) even after that cut, and a plain std is not robust to them: it read
+      6.69 where the MAD sigma reads 1.48, and the drawn "+/- 1 sigma" band held 95% of
+      the events rather than 68%.  The width is now the robust MAD sigma -- the same
+      lesson the boxcar-window study learned about np.std on heavy tails.
+    """
     plt = _setup_mpl(show)
-    dt = (bot.edge_pos - top.edge_pos)[coincidence].astype(float)
-    stats = {"n": int(dt.size), "mean": float(np.mean(dt)) if dt.size else float("nan"),
-             "std": float(np.std(dt)) if dt.size else float("nan"),
-             "median": float(np.median(dt)) if dt.size else float("nan")}
+    both = top.saw_pulse & bot.saw_pulse
+    dt = (bot.edge_pos - top.edge_pos)[both].astype(float)
+
+    if dt.size:
+        med = float(np.median(dt))
+        mad_sigma = 1.4826 * float(np.median(np.abs(dt - med)))
+    else:
+        med = mad_sigma = float("nan")
+    stats = {"n": int(dt.size), "n_both_saw": int(both.sum()), "median": med,
+             "mad_sigma": mad_sigma,
+             "mean": float(np.mean(dt)) if dt.size else float("nan"),
+             "std": float(np.std(dt)) if dt.size else float("nan")}
 
     fig, ax = plt.subplots(figsize=(9, 5))
     if dt.size:
-        lo, hi = np.percentile(dt, [0.5, 99.5])
-        pad = max(5.0, 0.1 * (hi - lo))
-        bins = np.arange(math.floor(lo - pad), math.ceil(hi + pad) + 1) - 0.5
+        # Frame the ROBUST core, not the outlier span: a 0.5-99.5 percentile range put
+        # the 3-sample-wide coincidence peak in 1.2% of the canvas.  Events outside the
+        # frame are counted in the legend rather than silently dropped.
+        half = max(10.0, 8.0 * mad_sigma)
+        lo, hi = med - half, med + half
+        bins = np.arange(math.floor(lo), math.ceil(hi) + 1) - 0.5
+        n_out = int(np.sum((dt < lo) | (dt > hi)))
         ax.hist(dt, bins=bins, color="C0", alpha=0.85)
-        ax.axvline(stats["mean"], color="C3", ls="-", lw=1.5,
-                   label=f"mean = {stats['mean']:.2f} samp")
-        ax.axvspan(stats["mean"] - stats["std"], stats["mean"] + stats["std"],
-                   color="C3", alpha=0.12, label=f"+/- 1 sigma ({stats['std']:.2f})")
-    ax.set(xlabel="Delta-t  (bottom edge - top edge)  [samples]", ylabel="coincidence events",
+        ax.axvline(med, color="C3", ls="-", lw=1.5, label=f"median = {med:.2f} samp")
+        ax.axvspan(med - mad_sigma, med + mad_sigma, color="C3", alpha=0.12,
+                   label=f"+/- 1 MAD sigma ({mad_sigma:.2f})")
+        if n_out:
+            ax.plot([], [], " ", label=f"{n_out:,} events outside frame "
+                                       f"({100 * n_out / dt.size:.2f}%)")
+    ax.set(xlabel="Delta-t  (bottom edge - top edge)  [samples]",
+           ylabel="events (both panels saw a pulse)",
            title="Top-bottom time coincidence")
     ax.legend(); ax.grid(True, alpha=0.3)
     fig.tight_layout()
@@ -418,26 +456,10 @@ def plot_dt_coincidence(top: PanelResult, bot: PanelResult, coincidence: np.ndar
     return stats
 
 
-def plot_class_breakdown(panels: dict[str, PanelResult], out_dir: Path,
-                         show: bool, save: bool) -> None:
-    """Stacked per-panel triage class fractions."""
-    plt = _setup_mpl(show)
-    names = ["top", "middle", "bottom"]
-    colors = {"CLEAN": "C2", "SATURATED": "C3", "PILEUP": "C1", "NOISE": "C7"}
-    fig, ax = plt.subplots(figsize=(8, 5))
-    bottom = np.zeros(len(names))
-    for c in wt.CLASS_LABELS:
-        fracs = np.array([np.mean(panels[nm].labels == c) for nm in names])
-        ax.bar(names, fracs, bottom=bottom, color=colors[c], label=c, alpha=0.9)
-        for j, f in enumerate(fracs):
-            if f > 0.03:
-                ax.text(j, bottom[j] + f / 2, f"{100*f:.0f}%", ha="center", va="center", fontsize=8)
-        bottom += fracs
-    ax.set(ylabel="fraction of events", title="Triage class breakdown per panel", ylim=(0, 1))
-    ax.legend(ncol=4, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.08))
-    ax.grid(True, axis="y", alpha=0.3)
-    fig.tight_layout()
-    _save(fig, out_dir, "eff_class_breakdown.png", show, save)
+# NOTE: there is deliberately no per-panel class-breakdown plot.  print_report already
+# tabulates all 12 cells (3 panels x 4 classes) with exact counts; a stacked bar of the
+# same table added nothing and was strictly WORSE -- it labelled only the cells above
+# 3%, which hid SATURATED and PILEUP, the two the hit definition actually turns on.
 
 
 def _gaussian(x, amp, mu, sigma):
@@ -456,12 +478,29 @@ def plot_noise_residuals(raws: dict[str, np.ndarray], panels: dict[str, PanelRes
     reveals whether the panels share a consistent noise level, or whether one channel
     is noisier / has an offset baseline -- which would shift its noise_prominence cut
     and bias its NOISE fraction.  The MAD is the robust width the noise sigma is built
-    from (sigma = 1.4826 * MAD); the Gaussian sigma is the least-squares comparison."""
+    from (sigma = 1.4826 * MAD); the Gaussian sigma is the least-squares comparison.
+
+    BINNING: the residual is a difference of INTEGER ADC samples and a median baseline,
+    so it lives on an integer lattice.  The bins must therefore be integer-ALIGNED (unit
+    width, edges on half-integers).  They used to be `linspace(-span, span, 121)` -- 0.617
+    ADC wide on run00270 -- so bins alternately caught a lattice point or nothing, and the
+    least-squares fit was dragged down to the mean of that spike/zero comb: the drawn curve
+    reproduced only 0.60-0.62 of the observed peak density on ALL THREE panels (the ratio
+    IS the bin width).  Unit bins restore it to 0.97-1.01 while moving the fitted sigma by
+    under 3%.
+
+    NON-GAUSSIANITY: these baselines are not always Gaussian (spike noise gives a peaked,
+    heavy-tailed residual).  A single fitted sigma would hide that, so RMS/MAD-sigma is
+    reported per panel and flagged when the tails inflate it -- a Gaussian has RMS = MAD
+    sigma, so a ratio well above 1 means the fitted sigma is not the whole story."""
     from scipy.optimize import curve_fit
 
     plt = _setup_mpl(show)
     names = ["top", "middle", "bottom"]
     colors = {"top": "C0", "middle": "C1", "bottom": "C2"}
+    # Above this RMS/MAD-sigma ratio the residual is too heavy-tailed for a single
+    # Gaussian sigma to describe, and the panel is flagged on the plot.
+    NON_GAUSS_RATIO = 1.2
 
     resids, stats = {}, {}
     for nm in names:
@@ -470,15 +509,19 @@ def plot_noise_residuals(raws: dict[str, np.ndarray], panels: dict[str, PanelRes
         r = pre.ravel()
         med = float(np.median(r))
         mad = float(np.median(np.abs(r - med)))
+        sigma = 1.4826 * mad
+        rms = float(np.std(r))
         resids[nm] = r
-        stats[nm] = {"baseline": float(p.baseline), "mad": mad, "sigma": 1.4826 * mad,
+        stats[nm] = {"baseline": float(p.baseline), "mad": mad, "sigma": sigma,
+                     "rms": rms, "rms_over_sigma": rms / sigma if sigma > 0 else float("nan"),
                      "n": int(r.size)}
 
-    # Common symmetric bin range so the three panels are directly comparable.
+    # Common symmetric, INTEGER-ALIGNED bin range so the three panels are directly
+    # comparable AND each bin holds exactly one lattice point (see BINNING above).
     allr = np.concatenate([resids[nm] for nm in names]) if resids else np.array([0.0])
     span = float(np.percentile(np.abs(allr), 99.5)) if allr.size else 1.0
-    span = max(span, 1e-6)
-    bins = np.linspace(-span, span, 121)
+    span = math.ceil(max(span, 1.0))
+    bins = np.arange(-span, span + 2) - 0.5
     centers = 0.5 * (bins[:-1] + bins[1:])
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharex=True, sharey=True)
@@ -501,8 +544,15 @@ def plot_noise_residuals(raws: dict[str, np.ndarray], panels: dict[str, PanelRes
             logger.warning("%s: noise-residual Gaussian fit did not converge.", nm)
         s["gauss_sigma"] = g_sigma
 
-        ax.set_title(f"{nm}\nbaseline = {s['baseline']:.4g} ADC   MAD = {s['mad']:.3g}",
-                     fontsize=9)
+        ratio = s["rms_over_sigma"]
+        heavy = np.isfinite(ratio) and ratio > NON_GAUSS_RATIO
+        if heavy:
+            # Say so ON the plot: a lone Gaussian sigma on a heavy-tailed baseline
+            # understates the real excursions the noise_prominence cut has to survive.
+            ax.plot([], [], " ", label=f"NON-GAUSSIAN\nRMS/sigma = {ratio:.2f}")
+        ax.set_title(f"{nm}\nbaseline = {s['baseline']:.4g} ADC   "
+                     f"MAD sigma = {s['sigma']:.3g}   RMS = {s['rms']:.3g}"
+                     f"{'  (!)' if heavy else ''}", fontsize=9)
         ax.set_xlabel("pre-pulse residual  (ADC - baseline)")
         ax.grid(True, alpha=0.3)
         if ax.get_legend_handles_labels()[0]:
@@ -658,23 +708,28 @@ def run(args) -> EfficiencyReport:
                                   overwrite=args.overwrite)
     show, save = (not args.no_show), args.save_plots
     if show or save:
-        dt_stats = plot_dt_coincidence(panels["top"], panels["bottom"], rep.coincidence,
-                                       out_dir, show, save)
-        logger.info("Top-bottom Delta-t: mean=%.2f median=%.2f sigma=%.2f samples (n=%d).",
-                    dt_stats["mean"], dt_stats["median"], dt_stats["std"], dt_stats["n"])
-        plot_class_breakdown(panels, out_dir, show, save)
+        dt_stats = plot_dt_coincidence(panels["top"], panels["bottom"], out_dir, show, save)
+        logger.info("Top-bottom Delta-t (both panels saw a pulse, n=%d): median=%.2f "
+                    "MAD sigma=%.2f samples  [non-robust mean=%.2f std=%.2f].",
+                    dt_stats["n"], dt_stats["median"], dt_stats["mad_sigma"],
+                    dt_stats["mean"], dt_stats["std"])
         noise_stats = plot_noise_residuals(raws, panels, out_dir, show, save)
         for nm in ("top", "middle", "bottom"):
             s = noise_stats[nm]
-            logger.info("%-6s noise residual: baseline=%.4g MAD=%.4g sigma=%.4g "
-                        "gauss_sigma=%.4g ADC (n=%d).",
-                        nm, s["baseline"], s["mad"], s["sigma"], s["gauss_sigma"], s["n"])
-        if args.sens_n > 1:
-            values = np.linspace(args.sens_lo, args.sens_hi, args.sens_n)
-            plot_sensitivity(raws, readouts, args.pulse_lo, args.pulse_hi, offsets,
-                             panel_kw, args.sensitivity_param, values, args.z,
-                             out_dir, show, save, args.denominator,
-                             auto_window=args.auto_window, window_coverage=args.window_coverage)
+            logger.info("%-6s noise residual: baseline=%.4g MAD sigma=%.4g RMS=%.4g "
+                        "(RMS/sigma=%.2f) gauss_sigma=%.4g ADC (n=%d).",
+                        nm, s["baseline"], s["sigma"], s["rms"], s["rms_over_sigma"],
+                        s["gauss_sigma"], s["n"])
+    # The cut-sensitivity sweep is a SYSTEMATIC on the reported efficiency, not a
+    # picture: it runs whether or not plots were asked for (only the figure is gated),
+    # because "the number moves by 5% if you nudge the threshold" is something you must
+    # be told even on a --no-show --no-save run.  It prints its table either way.
+    if args.sens_n > 1:
+        values = np.linspace(args.sens_lo, args.sens_hi, args.sens_n)
+        plot_sensitivity(raws, readouts, args.pulse_lo, args.pulse_hi, offsets,
+                         panel_kw, args.sensitivity_param, values, args.z,
+                         out_dir, show, save, args.denominator,
+                         auto_window=args.auto_window, window_coverage=args.window_coverage)
     return rep
 
 
