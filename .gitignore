@@ -10,6 +10,10 @@ waveform_files/
 __pycache__/
 *.pyc
 
+# Screenshots / scratch images dropped in the project root (example.png was an
+# inbox screenshot: it carries a colleague's email address, not analysis)
+example.png
+
 # Local editor and tool state
 .vscode/
 .idea/
