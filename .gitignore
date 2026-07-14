@@ -1,0 +1,12 @@
+# Raw / converted waveform data (hundreds of MB - GB; regenerate with
+# file_manipulation/midas_to_h5.py + extract_channels.py / caen_to_h5.py)
+waveform_files/
+
+# Generated results trees (regenerate with each pipeline's driver; see
+# energy_reconstruction/README.md for the production commands)
+*_results/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
