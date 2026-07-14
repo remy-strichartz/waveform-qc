@@ -15,6 +15,11 @@ __pycache__/
 # Results plots live in *_results/ subfolders, so a root-only rule is safe.
 /*.png
 
-# Local editor and tool state
-.vscode/
+# Local editor state -- but NOT the two shared files.  Nothing here is installed as a
+# package (the drivers run as scripts and add their siblings to sys.path at runtime), so
+# without these an editor cannot resolve a single cross-package import and a fresh clone
+# looks broken.  They hold relative paths only.
+.vscode/*
+!.vscode/settings.json
+!.vscode/pyrightconfig.json
 .idea/
