@@ -48,6 +48,11 @@ import waveform_triage as wt
 from peakfind import find_peaks_manual
 from plotting import setup_mpl as _setup_mpl, finish_figure as _finish, paged_figure
 
+# Shared waveform-file lookup (bare filename -> waveform_files/, including its
+# per-run folders), the same convention waveform_triage / hodoscope_efficiency use.
+sys.path.insert(0, str(Path(__file__).parent.parent / "file_manipulation"))
+from output_paths import resolve_input  # noqa: E402
+
 logger = logging.getLogger("pulse_window")
 
 
@@ -870,6 +875,9 @@ def main():
     args = parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level),
                         format="%(levelname)s %(name)s: %(message)s")
+    # Bare filename -> waveform_files/, including its per-run folders (the same
+    # lookup waveform_triage does); an explicit path is used as given.
+    args.input = resolve_input(args.input)
     waveforms, _ = wt.load_waveforms(args.input)
 
     # Orient negative (PMT) records up-front so every sub-command sees up-going
