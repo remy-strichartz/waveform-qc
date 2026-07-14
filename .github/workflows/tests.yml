@@ -30,5 +30,8 @@ jobs:
       - name: file_manipulation
         run: python file_manipulation/tests/test_file_manipulation.py
 
+      - name: preprocessing
+        run: python preprocessing/tests/test_preprocessing.py
+
       - name: energy_reconstruction
         run: python energy_reconstruction/tests/test_energy_reconstruction.py

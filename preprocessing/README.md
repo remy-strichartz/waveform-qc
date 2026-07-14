@@ -114,3 +114,36 @@ A small, vectorized stand-in for `scipy.signal.find_peaks`, reproducing the `hei
 `distance` and `prominence` filters *in scipy's order* so results match. It exists so the
 triage cuts are fully inspectable and so the diagnostic tools can reuse the exact peak logic
 the classifier used, rather than an approximation of it.
+
+## One thing that surprises everyone: the post-pulse veto
+
+A second pulse *just after* the main one is **not** pile-up. It is the same detector still
+ringing at the same particle — an afterpulse, or a cable reflection (`run00270_ch9`'s template
+has two of them, at roughly +21 and +39 samples). `post_pulse_veto` (300 samples by default)
+exists to say so, and extras inside it are ignored.
+
+The consequence is easy to trip over: a record has to be long enough to *hold* a second
+particle beyond that veto before `PILEUP` is even reachable. Turn the veto off and a large
+slice of perfectly good events reclassifies as `PILEUP` and walks out of the spectrum.
+
+## Tests
+
+```bash
+python tests/test_preprocessing.py
+```
+
+Synthetic waveforms with known truth; no real data is read. They pin the contracts whose
+failure is *silent* rather than loud:
+
+* **`peakfind` is checked against scipy itself** on randomised signals — its whole claim is
+  to be a drop-in subset, including the filter order, and that is a falsifiable claim about an
+  external library rather than an opinion.
+* **Saturation is a flat top, not a height.** A tall-but-pointed pulse must not be called
+  `SATURATED`; a height-only test would quietly delete the brightest real muons from every
+  spectrum.
+* **`SATURATED` and `PILEUP` count as detections** in the efficiency, and only `NOISE` is a
+  miss. Nothing would crash if someone "tidied" that up — the efficiency would just be wrong.
+* **The Wilson interval stays inside [0, 1]** at `k == 0` and `k == n`, which is exactly where
+  a good detector sits and exactly where the naive normal interval escapes.
+* **The post-pulse veto**, both ways: an afterpulse inside it is `CLEAN`, and the same event
+  with the veto off is `PILEUP`.
