@@ -1,0 +1,34 @@
+name: tests
+
+# Both suites are synthetic end-to-end regressions -- they build their own waveforms and
+# touch no real data, which is exactly what makes them runnable here.  ~45 s combined.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg   # no display on the runner; plotting must not open a window
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Record the environment under test
+        run: python -c "import numpy,scipy,h5py,matplotlib as m;print('numpy',numpy.__version__);print('scipy',scipy.__version__);print('h5py',h5py.__version__);print('matplotlib',m.__version__)"
+
+      - name: file_manipulation
+        run: python file_manipulation/tests/test_file_manipulation.py
+
+      - name: energy_reconstruction
+        run: python energy_reconstruction/tests/test_energy_reconstruction.py
