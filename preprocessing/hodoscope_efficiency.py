@@ -92,8 +92,6 @@ from output_paths import find_related, resolve_input, resolve_results_dir  # noq
 # A panel "saw a particle" if its triage class is anything but NOISE.
 HIT_CLASSES = ("CLEAN", "SATURATED", "PILEUP")
 
-DEFAULT_WAVEFORM_DIR = _PROJECT_ROOT / "waveform_files"
-
 
 def dead_time_systematic(input_path: Path, times_path: Path | None) -> dict | None:
     """The DAQ dead-time contribution to veto inefficiency, or None if this run has no
@@ -567,7 +565,7 @@ def _resolve_sources(args) -> dict[str, tuple[Path, int]]:
       * three separate files via --top/--middle/--bottom (+ optional --*-channel)."""
     def ch(val, default):
         return default if val is None else val
-    # Bare filenames -> waveform_files/, including its per-run folders.
+    # Bare filenames -> waveform_files/, wherever their dataset folders keep them.
     if args.input is not None:
         c = {"top": ch(args.top_channel, 0), "middle": ch(args.middle_channel, 1),
              "bottom": ch(args.bottom_channel, 2)}
@@ -651,11 +649,13 @@ def run(args) -> EfficiencyReport:
     print_report(panels, rep, args.denominator, dead_time)
 
     # Group this run's eff_*.png in its own per-run results folder,
-    # preprocessing_results/<input-stem>_efficiency_results[_N]/, keyed by the
+    # preprocessing_results/hodoscope/<input-stem>_efficiency_results[_N]/, keyed by the
     # multi-channel input file (or the top-panel file in three-file mode); a re-run
     # gets a fresh _N folder instead of overwriting the previous one.
-    group = (args.input if args.input is not None else args.top).stem
-    out_dir = resolve_results_dir(__file__, group, base=args.output_dir, program="efficiency")
+    dataset = (args.input if args.input is not None else args.top).stem
+    out_dir = resolve_results_dir(__file__, dataset, base=args.output_dir,
+                                  program="efficiency", group="hodoscope",
+                                  overwrite=args.overwrite)
     show, save = (not args.no_show), args.save_plots
     if show or save:
         dt_stats = plot_dt_coincidence(panels["top"], panels["bottom"], rep.coincidence,
@@ -699,7 +699,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", type=Path, default=None,
                    help="Base output directory; eff_*.png go into "
                         "<output-dir>/<input-stem>_efficiency_results[_N]/. Default base: "
-                        "preprocessing/preprocessing_results/ (a re-run gets a fresh _N folder).")
+                        "preprocessing/preprocessing_results/hodoscope/ (a re-run gets a "
+                        "fresh _N folder unless --overwrite).")
+    p.add_argument("--overwrite", action="store_true",
+                   help="Write into the canonical (un-suffixed) results folder, replacing that "
+                        "run's files in place, instead of creating a fresh _N folder.")
 
     # Detector types -> polarity (config 1: pmt/sipm; config 2: all sipm).
     p.add_argument("--tb-readout", choices=["sipm", "pmt", "auto"], default="pmt",
@@ -726,10 +730,11 @@ def parse_args() -> argparse.Namespace:
 
     # Denominator definition for the efficiency.
     p.add_argument("--denominator", choices=["coincidence", "all"], default="all",
-                   help="'coincidence' (default): require top AND bottom to pass offline triage. "
-                        "'all': every recorded event -- correct when the DAQ hardware trigger "
-                        "ALREADY required a top&bottom coincidence (avoids re-deriving them with "
-                        "cuts that can reject small PMT pulses).")
+                   help="'all' (default): every recorded event -- correct when the DAQ hardware "
+                        "trigger ALREADY required a top&bottom coincidence (avoids re-deriving "
+                        "them with cuts that can reject small PMT pulses). 'coincidence': require "
+                        "top AND bottom to pass offline triage -- use when the trigger did NOT "
+                        "guarantee them, or to additionally clean accidental triggers.")
 
     # Confidence level.
     p.add_argument("--z", type=float, default=1.96,
@@ -769,7 +774,8 @@ def parse_args() -> argparse.Namespace:
                    help="Times .h5 carrying /event_time_rel_s, used to bound the DAQ "
                         "dead-time systematic on the efficiency. Only needed when the panel "
                         "files themselves have no time axis (an older conversion); default: "
-                        "waveform_files/<middle-stem>_times.h5 if it exists.")
+                        "the run's own waveform_files/<run>/times/<middle-stem>_times.h5 "
+                        "if it exists.")
     p.add_argument("--save-plots", action="store_true", help="Save eff_*.png figures.")
     p.add_argument("--no-show", action="store_true", help="Do not open plot windows.")
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])

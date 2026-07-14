@@ -70,8 +70,7 @@ from peakfind import find_peaks_manual
 logger = logging.getLogger("waveform_triage")
 
 # Project root is two levels above preprocessing/waveform_triage.py.
-_PROJECT_ROOT        = Path(__file__).parent.parent
-_DEFAULT_WAVEFORM_DIR = _PROJECT_ROOT / "waveform_files"
+_PROJECT_ROOT = Path(__file__).parent.parent
 
 # Shared waveform-file and per-run results-folder conventions
 # (see file_manipulation/output_paths.py).
@@ -459,8 +458,9 @@ def prepare_channel(raw: np.ndarray, polarity: str, pulse_lo: int, pulse_hi: int
 def detect_saturation(waveforms: np.ndarray, saturation_adc: float | None,
                       consec: int = 4, rail_tol: float = 0.01
                       ) -> tuple[np.ndarray, float, bool]:
-    """Flag events that clip the ADC rail: peak reaches the rail, or there is a
-    flat top of `consec` samples within rail_tol of the rail.
+    """Flag events that clip the ADC rail: a flat top of `consec` consecutive
+    samples within rail_tol of the rail.  (A single rail touch WITHOUT a flat
+    top is deliberately not flagged -- see the comment below.)
 
     Returns (mask, rail_used, rail_found).  rail_found is True when the rail is
     trusted -- user-supplied or auto-detected from a genuine pile-up of peaks at
@@ -473,16 +473,27 @@ def detect_saturation(waveforms: np.ndarray, saturation_adc: float | None,
 
     if saturation_adc is None:
         vals, counts = np.unique(np.round(row_max).astype(np.int64), return_counts=True)
-        top_val, top_count = int(vals[np.argmax(counts)]), int(counts.max())
-        # A genuine rail is where the TALLEST pulses pile up -- at the high end of
-        # the peak distribution.  Require the clustered value both to be common AND
-        # to sit at/above the median peak; otherwise the "cluster" is the noise
-        # floor (which dominates when many events are misses, e.g. an efficiency
-        # run's middle panel), and treating it as a rail would collapse the rail to
-        # the baseline and flag everything as saturated.
-        if top_count / len(waveforms) > 0.005 and top_val >= np.median(row_max):
-            saturation_adc = float(top_val)
-            logger.info("Auto saturation rail = %d ADC.", top_val)
+        # A genuine rail is a pile-up of the TALLEST pulses: many events sharing one
+        # (rounded) peak value at the high end of the peak distribution.  Accept the
+        # TOPMOST value that is both common (>0.5% of events) and in the top
+        # percentile of peaks -- NOT the single most common value overall: on a
+        # mostly-noise channel the noise-ceiling mode out-counts a genuine 0.5-1%
+        # rail cluster (run00270 ch4: noise mode 666 x120 vs true rail 4095 x113),
+        # which used to hide the rail entirely and leave truly clipped events in
+        # CLEAN.  The percentile gate keeps the noise mode itself from qualifying:
+        # a true ADC rail always passes it (nothing exceeds a rail, so its pile-up
+        # IS the maximum of the peak distribution), while the noise ceiling sits
+        # near the MEDIAN of a noise-dominated channel -- accepting it would
+        # collapse the rail onto the noise ceiling and flag 50-100% of the channel
+        # as SATURATED (the old at/above-median gate cleared it by a coin flip:
+        # ch4 mode 666 vs median 707, a 0.6-sigma margin).
+        qual = np.flatnonzero((counts / len(waveforms) > 0.005) &
+                              (vals >= np.percentile(row_max, 99.0)))
+        if qual.size:
+            top = int(qual[-1])
+            saturation_adc = float(vals[top])
+            logger.info("Auto saturation rail = %d ADC (pile-up of %d events).",
+                        int(vals[top]), int(counts[top]))
         else:
             saturation_adc = float(np.percentile(row_max, 99.99))
             rail_found = False
@@ -530,7 +541,7 @@ def _is_real_pulse(wf: np.ndarray, peak: int, baseline: float, min_height: float
 
 
 def _pulse_window_peak(wf: np.ndarray, pulse_lo: int, pulse_hi: int) -> int:
-    """Index of the highest sample inside the pulse window [pulse_lo, pulse_hi]."""
+    """Index of the highest sample inside the pulse window [pulse_lo, pulse_hi)."""
     return pulse_lo + int(np.argmax(wf[pulse_lo:pulse_hi]))
 
 
@@ -1334,7 +1345,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", type=Path, default=None,
                    help="Base output directory; outputs go into "
                         "<output-dir>/<input-stem>_triage_results[_N]/. Default base: "
-                        "preprocessing/preprocessing_results/ (a re-run gets a fresh _N folder).")
+                        "preprocessing/preprocessing_results/triage/ (a re-run gets a fresh "
+                        "_N folder unless --overwrite).")
+    p.add_argument("--overwrite", action="store_true",
+                   help="Write into the canonical (un-suffixed) results folder, replacing "
+                        "that run's files in place, instead of creating a fresh _N folder. "
+                        "Use when re-running a set of channels and expecting exactly one "
+                        "folder per channel (same convention as energy_reconstruction).")
     p.add_argument("--saturation-adc", type=float, default=None,
                    help="ADC rail for saturation. Default: auto-detect.")
     p.add_argument("--detector", choices=["sipm", "pmt"], default="sipm",
@@ -1459,14 +1476,15 @@ def main() -> None:
     logging.basicConfig(level=getattr(logging, args.log_level),
                         format="%(levelname)s %(name)s: %(message)s")
 
-    # Bare filename -> waveform_files/, including its per-run folders.
+    # Bare filename -> waveform_files/, wherever its dataset folder keeps it.
     input_path = resolve_input(args.input)
 
-    # Resolve the per-run results folder: preprocessing_results/<stem>_triage_results[_N]
+    # Resolve the per-run results folder: preprocessing_results/triage/<stem>_triage_results[_N]
     # (or <output-dir>/<stem>_triage_results[_N] if --output-dir is given).  All of
     # this run's outputs -- exported class files, plots, diagnostics -- go here.
     output_dir = resolve_results_dir(__file__, input_path.stem,
-                                     base=args.output_dir, program="triage")
+                                     base=args.output_dir, program="triage", group="triage",
+                                     overwrite=args.overwrite)
 
     # Apply the detector preset for any preset-controlled value left unset on the CLI.
     preset = DETECTOR_PRESETS[args.detector]

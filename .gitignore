@@ -10,3 +10,6 @@ waveform_files/
 __pycache__/
 *.pyc
 
+# Local editor and tool state
+.vscode/
+.idea/
