@@ -10,6 +10,11 @@ waveform_files/
 __pycache__/
 *.pyc
 
+# PDF report renders: kept locally for the author, never published. The reports are
+# regenerable and can be large; source lives in the code + *_results/ figures.
+pdf_reports/
+*.pdf
+
 # Screenshots / scratch images dropped in the project root: they are scratch, not
 # analysis, and one of them (example.png) contained a personal email address.
 # Results plots live in *_results/ subfolders, so a root-only rule is safe.
