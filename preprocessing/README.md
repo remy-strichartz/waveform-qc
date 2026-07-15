@@ -108,6 +108,17 @@ Note that DAQ dead time is veto inefficiency this measurement is **blind** to �
 while the DAQ is busy is never recorded at all, so it appears in neither the numerator nor the
 denominator. The dead-time systematic is quoted separately; see `timing_stability`.
 
+What "middle panel" means on run00270 (geometry established 2026-07-15, arXiv:2505.06129):
+the middle panel is one 100×50 cm² prototype with **eight** fiber-swirl mini-modules
+(ch0–ch7), and the trigger footprint sits over the **ch0 corner** — so the canonical
+`--middle-channel` ch0 measures the response of the mini-module under the footprint, not an
+OR over the whole panel. That choice was cross-checked against the other seven mini-modules:
+events where ch0 saw nothing carry almost no light *anywhere* in the panel (rest-of-bank
+median ~21 ADC), so an OR-of-8 hit definition would raise the ~81.5% only marginally. Part
+of the remaining inefficiency is plausibly geometric acceptance (the footprint is ~3 cm from
+the panel's edge, so angled tracks can clip out the side) rather than detection failure —
+the paper quotes 98±1% intrinsic panel efficiency.
+
 ## peakfind.py
 
 A small, vectorized stand-in for `scipy.signal.find_peaks`, reproducing the `height`,
