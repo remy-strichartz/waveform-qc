@@ -42,11 +42,11 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # repo root
 
-import hodoscope_efficiency as hodo   # noqa: E402
-import peakfind as pf                 # noqa: E402
-import waveform_triage as wt          # noqa: E402
+from common import peakfind as pf                            # noqa: E402
+from common import waveform_ops as wt                        # noqa: E402
+from preprocessing import hodoscope_efficiency as hodo       # noqa: E402
 
 
 # ---------------------------------------------------------------------------------

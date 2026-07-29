@@ -10,6 +10,11 @@ waveform_files/
 __pycache__/
 *.pyc
 
+# Editable-install metadata (`pip install -e .`, which is optional -- see README)
+*.egg-info/
+build/
+dist/
+
 # PDF report renders: kept locally for the author, never published. The reports are
 # regenerable and can be large; source lives in the code + *_results/ figures.
 pdf_reports/
@@ -20,10 +25,10 @@ pdf_reports/
 # Results plots live in *_results/ subfolders, so a root-only rule is safe.
 /*.png
 
-# Local editor state -- but NOT the two shared files.  Nothing here is installed as a
-# package (the drivers run as scripts and add their siblings to sys.path at runtime), so
-# without these an editor cannot resolve a single cross-package import and a fresh clone
-# looks broken.  They hold relative paths only.
+# Local editor state -- but NOT the two shared files.  Installing the project is optional
+# (the drivers run as scripts and put the repo root on sys.path at runtime), so without
+# these an editor cannot resolve a single cross-package import on a fresh clone and the
+# checkout looks broken.  They hold relative paths only.
 .vscode/*
 !.vscode/settings.json
 !.vscode/pyrightconfig.json

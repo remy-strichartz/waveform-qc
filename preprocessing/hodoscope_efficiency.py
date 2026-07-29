@@ -80,19 +80,17 @@ from pathlib import Path
 
 import numpy as np
 
-# Import the real triage classifier so the cut logic is shared, not duplicated.
-sys.path.insert(0, str(Path(__file__).parent))
-import waveform_triage as wt
-from plotting import setup_mpl as _setup_mpl, finish_figure  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # repo root (see README)
+
+# The real triage classifier (so the cut logic is shared, not duplicated), the shared
+# waveform-file and per-run results-folder conventions, and the DAQ dead-time bound.
+from common.output_paths import (find_related, resolve_input,       # noqa: E402
+                                 resolve_results_dir)
+from common.plotting import finish_figure, setup_mpl as _setup_mpl  # noqa: E402
+from common.timing_ops import dead_time_bound                       # noqa: E402
+from common import waveform_ops as wt                               # noqa: E402
 
 logger = logging.getLogger("hodoscope_efficiency")
-
-_PROJECT_ROOT         = Path(__file__).parent.parent
-
-# Shared waveform-file and per-run results-folder conventions
-# (see file_manipulation/output_paths.py).
-sys.path.insert(0, str(_PROJECT_ROOT / "file_manipulation"))
-from output_paths import find_related, resolve_input, resolve_results_dir  # noqa: E402
 
 # A panel "saw a particle" if its triage class is anything but NOISE.
 HIT_CLASSES = ("CLEAN", "SATURATED", "PILEUP")
@@ -107,7 +105,7 @@ def dead_time_systematic(input_path: Path, times_path: Path | None) -> dict | No
     never recorded, so it is missing from BOTH the numerator and the denominator and the
     offline efficiency cannot see it.  Only the arrival times can bound it -- a dead time
     tau removes every inter-arrival interval below tau, so the smallest interval actually
-    observed is a hard upper bound on it (timing_stability/event_times.dead_time_bound).
+    observed is a hard upper bound on it (common/timing_ops.dead_time_bound).
 
     The bound is quoted alongside the statistical CI so the two can be compared: on
     run00270 dead time costs < 0.03%, far below the binomial error, i.e. no correction is
@@ -130,8 +128,6 @@ def dead_time_systematic(input_path: Path, times_path: Path | None) -> dict | No
     if t is None or t.size < 3:
         return None
 
-    sys.path.insert(0, str(_PROJECT_ROOT / "timing_stability"))
-    from event_times import dead_time_bound  # noqa: E402
     return dead_time_bound(t)
 
 

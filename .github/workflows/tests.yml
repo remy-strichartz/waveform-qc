@@ -1,7 +1,7 @@
 name: tests
 
-# Both suites are synthetic end-to-end regressions -- they build their own waveforms and
-# touch no real data, which is exactly what makes them runnable here.  ~45 s combined.
+# All four suites are synthetic end-to-end regressions -- they build their own waveforms
+# and touch no real data, which is exactly what makes them runnable here.  ~45 s combined.
 on:
   push:
     branches: [main]
@@ -26,6 +26,9 @@ jobs:
 
       - name: Record the environment under test
         run: python -c "import numpy,scipy,h5py,matplotlib as m;print('numpy',numpy.__version__);print('scipy',scipy.__version__);print('h5py',h5py.__version__);print('matplotlib',m.__version__)"
+
+      - name: common
+        run: python common/tests/test_output_paths.py
 
       - name: file_manipulation
         run: python file_manipulation/tests/test_file_manipulation.py

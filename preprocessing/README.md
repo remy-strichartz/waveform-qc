@@ -36,11 +36,17 @@ class files** — so `--export` is only for when you want the subsets on disk.
 
 | module | role |
 |---|---|
-| `waveform_triage.py` | **the classifier.** Everything else here is downstream of it. |
+| `waveform_triage.py` | **the triage driver** — reports and exports the classes. |
 | `pulse_window.py` | makes the classifier's cuts *visible* — where each threshold sits, what it moves |
 | `hodoscope_efficiency.py` | the physics result: middle-panel muon efficiency by the telescope method |
-| `peakfind.py` | a dependency-free `scipy.signal.find_peaks`, so no cut hides in an opaque C routine |
-| `plotting.py` | shared matplotlib setup (forces `Agg` when only saving) |
+
+The cuts themselves are not in this package. They live in
+[`common/waveform_ops.py`](../common/waveform_ops.py) — baseline/noise, the polarity vote,
+the auto pulse window, the flat-top saturation test and `classify_events` — because
+`energy_reconstruction` and `file_manipulation/channel_diagnostics.py` apply the same ones
+and must not drift from these. Also in `common/`: `peakfind.py` (a dependency-free
+`scipy.signal.find_peaks`, so no cut hides in an opaque C routine) and `plotting.py`
+(shared matplotlib setup, forces `Agg` when only saving).
 
 ## waveform_triage.py
 
@@ -119,7 +125,7 @@ of the remaining inefficiency is plausibly geometric acceptance (the footprint i
 the panel's edge, so angled tracks can clip out the side) rather than detection failure —
 the paper quotes 98±1% intrinsic panel efficiency.
 
-## peakfind.py
+## common/peakfind.py
 
 A small, vectorized stand-in for `scipy.signal.find_peaks`, reproducing the `height`,
 `distance` and `prominence` filters *in scipy's order* so results match. It exists so the
