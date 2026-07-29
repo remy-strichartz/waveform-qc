@@ -31,8 +31,10 @@ that wrong and the efficiency measurement below is wrong with it.
 
 This classification is the shared primitive: `hodoscope_efficiency` and `pulse_window` both
 call the real triage functions rather than reimplementing them, and `energy_reconstruction`
-imports `classify_events` and re-runs it in memory. **Nothing downstream reads the exported
-class files** — so `--export` is only for when you want the subsets on disk.
+imports `classify_events` and re-runs it in memory. **No downstream stage depends
+automatically on the exported class files** — `--export` exists for subsets you choose to
+analyze as inputs in their own right (the canonical energy-reconstruction batch feeds
+`run00270_ch9_clean.h5` and `_ch10_clean.h5` to muon-mode compares that way).
 
 | module | role |
 |---|---|
@@ -59,10 +61,11 @@ Classifies and prints; it writes **no files** unless you ask. `--detector {sipm,
 preset for every threshold you do not set yourself — the PMT panels are fast and the SiPM
 panels are not, and a single set of cuts does not serve both.
 
-`--export` writes one raw-waveform `.h5` per class (`<stem>_clean.h5`, `_saturated.h5`,
-`_pileup.h5`, `_noise.h5`) into the results folder. Each carries the input's per-event time
-axis, row-filtered to the class, so a subset stays joinable back to the run's recovered times
-via `/source_event_index`.
+`--export` writes one raw-waveform `.h5` per class (`<stem>_clean.h5`, `_pileup.h5`,
+`_noise.h5`, plus `_not_noise.h5` = everything that saw a particle; `_saturated.h5` only
+when a true rail was found) into the results folder. Each carries the input's per-event
+time axis, row-filtered to the class, so a subset stays joinable back to the run's
+recovered times via `/source_event_index`.
 
 Results land in `preprocessing_results/triage/<stem>_triage_results[_N]/`.
 
@@ -71,7 +74,11 @@ Results land in `preprocessing_results/triage/<stem>_triage_results[_N]/`.
 The classifier is a chain of thresholds — pulse-window height, leading-edge shape, record
 dominance, saturation flat-top, pile-up extra height / fraction / separation / undershoot. This
 tool exists so none of them is a magic number you have to take on faith. It calls the *real*
-triage functions, so what it draws is exactly what the classifier does.
+triage functions — but note the **window**: standalone runs use the fixed default (or
+`--pulse-lo/--pulse-hi`), not triage's auto-derived one, so class counts can differ from a
+triage run of the same file (ch9: 61 events, 0.4%). Run `window` first to get the derived
+window, or invoke via `waveform_triage --diagnostics`, which passes the resolved window and
+cuts through — there the match is exact.
 
 | sub-command | what it answers |
 |---|---|
@@ -100,8 +107,9 @@ efficiency   =  numerator / denominator          (Wilson score interval)
 ```
 
 "Saw a real pulse" is `class != NOISE` — which is why the four-class split above has to be
-right. The per-panel class breakdown is printed and plotted, so the saturated and pile-up
-contributions to the numerator stay auditable rather than buried in a single ratio.
+right. The per-panel class breakdown is printed, so the saturated and pile-up contributions
+to the numerator stay auditable rather than buried in a single ratio. (It is deliberately
+*not* plotted — the stacked bar hid exactly the small classes it needed to show.)
 
 `--denominator {all,coincidence}` chooses whether every recorded event counts as a coincidence
 (correct when the DAQ trigger *is* the AND of top and bottom, which is the usual case here) or
@@ -118,12 +126,16 @@ What "middle panel" means on run00270 (geometry established 2026-07-15, arXiv:25
 the middle panel is one 100×50 cm² prototype with **eight** fiber-swirl mini-modules
 (ch0–ch7), and the trigger footprint sits over the **ch0 corner** — so the canonical
 `--middle-channel` ch0 measures the response of the mini-module under the footprint, not an
-OR over the whole panel. That choice was cross-checked against the other seven mini-modules:
-events where ch0 saw nothing carry almost no light *anywhere* in the panel (rest-of-bank
-median ~21 ADC), so an OR-of-8 hit definition would raise the ~81.5% only marginally. Part
+OR over the whole panel. That choice was cross-checked against the other seven mini-modules
+(re-measured 2026-07-29 with the shared classifier): ch0-miss events carry ~3–5× less light
+in the rest of the bank than ch0 hits (best-sibling pulse-height median 127 vs 611 ADC),
+and an OR-of-8 hit definition rescues 161 of the 2,770 ch0 misses — **81.53% → 82.60%**,
+a +1.1 pp shift (~1.7× the statistical error) that leaves every conclusion drawn from the
+headline intact. The number is a property of the ch0 cell, not of the whole panel. Part
 of the remaining inefficiency is plausibly geometric acceptance (the footprint is ~3 cm from
 the panel's edge, so angled tracks can clip out the side) rather than detection failure —
-the paper quotes 98±1% intrinsic panel efficiency.
+the paper quotes 98±1% intrinsic panel efficiency; settling that split would take a
+position/angle study, which no tool here performs.
 
 ## common/peakfind.py
 

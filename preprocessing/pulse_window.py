@@ -123,9 +123,16 @@ def classify_all(waveforms, base, sigma, P: Params) -> dict:
         post_pulse_veto=P.post_pulse_veto, undershoot_sigma=P.undershoot_sigma,
         undershoot_window=P.undershoot_window, max_peaks=P.max_peaks,
         dom_floor_sigma=P.dom_floor_sigma)
+    # classify_events discards rail_found, but this tool's whole job is to show the
+    # cuts AS APPLIED: on a no-rail channel the saturation threshold is only the
+    # 99.99th-pct advisory fallback and the classifier flags NOTHING, so the cutflow
+    # and the flat-top panel must say so instead of drawing a cut that is not live.
+    _, _, rail_found = wt.detect_saturation_cut(waveforms, P.saturation_adc,
+                                                consec=P.consec, rail_tol=P.rail_tol)
     return {"sat": labels == "SATURATED", "pileup": labels == "PILEUP",
             "noise": labels == "NOISE", "clean": labels == "CLEAN",
-            "info": info, "peaks": peaks, "sat_thr": float(sat_thr)}
+            "info": info, "peaks": peaks, "sat_thr": float(sat_thr),
+            "rail_found": bool(rail_found)}
 
 
 def longest_near_rail_run(waveforms: np.ndarray, rail_band: float) -> np.ndarray:
@@ -345,9 +352,11 @@ def cmd_features(waveforms, args):
           % (base, sigma, P.pulse_lo, P.pulse_hi))
     print("  priority: PILEUP > SATURATED > NOISE > CLEAN  (rows sum to total)")
     print("=" * 70)
+    rail_note = ("rail " + format(cls["sat_thr"], ".0f") if cls["rail_found"] else
+                 f"NO true rail; {cls['sat_thr']:.0f} is the 99.99th-pct advisory, cut OFF")
     print(f"  events total ........................... {N:>8,}")
     print(f"  PILEUP (real 2nd pulse) ................ {int(cls['pileup'].sum()):>8,}")
-    print(f"  SATURATED (of the rest, rail {cls['sat_thr']:.0f}) .. {int(cls['sat'].sum()):>8,}")
+    print(f"  SATURATED (of the rest, {rail_note}) .. {int(cls['sat'].sum()):>8,}")
     print(f"  NOISE (of the rest) ................... {int(cls['noise'].sum()):>8,}")
     print(f"  CLEAN ................................. {int(cls['clean'].sum()):>8,}   "
           f"({100*cls['clean'].mean():.1f}%)")
@@ -355,7 +364,9 @@ def cmd_features(waveforms, args):
     print("  diagnostic sub-reasons (may overlap with the above):")
     print(f"    no real pulse in window ............. {int(real_fail.sum()):>8,}   "
           f"(height<{P.noise_prominence}s / weak edge / not dominant)")
-    print(f"    near the saturation rail ............ {int((F['row_max'] >= cls['sat_thr']*(1-P.rail_tol)).sum()):>8,}")
+    print(f"    near the saturation rail ............ "
+          f"{int((F['row_max'] >= cls['sat_thr']*(1-P.rail_tol)).sum()):>8,}"
+          + ("" if cls["rail_found"] else "   (advisory threshold; none are flagged)"))
     print("=" * 70 + "\n")
 
     # ---- per-gate breakdown of rejected extra-pulse candidates ----
@@ -408,8 +419,11 @@ def cmd_features(waveforms, args):
     runs = longest_near_rail_run(waveforms[near], rail_band) if near.any() else np.array([0])
     a.hist(runs, bins=np.arange(0, max(runs.max(), P.consec + 2) + 1) - 0.5, color="C0", alpha=0.8)
     a.axvline(P.consec - 0.5, color="r", ls="--", label=f"consec={P.consec}")
+    sat_title = ("CUT: saturation flat-top\n(right of line -> SATURATED)" if cls["rail_found"]
+                 else "saturation flat-top -- NO true rail on this channel\n"
+                      "(advisory threshold: the classifier flags nothing)")
     a.set_yscale("log"); a.set(xlabel="longest run at rail (samples)", ylabel="near-rail events",
-                               title="CUT: saturation flat-top\n(right of line -> SATURATED)")
+                               title=sat_title)
     a.legend(); a.grid(True, alpha=0.3)
 
     # 5: extra-pulse height & fraction, colored by the FIRST failing gate

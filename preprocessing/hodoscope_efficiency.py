@@ -84,8 +84,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # repo root (s
 
 # The real triage classifier (so the cut logic is shared, not duplicated), the shared
 # waveform-file and per-run results-folder conventions, and the DAQ dead-time bound.
-from common.output_paths import (find_related, resolve_input,       # noqa: E402
-                                 resolve_results_dir)
+from common.output_paths import (dataset_of, find_related,          # noqa: E402
+                                 resolve_input, resolve_results_dir)
 from common.plotting import finish_figure, setup_mpl as _setup_mpl  # noqa: E402
 from common.timing_ops import dead_time_bound                       # noqa: E402
 from common import waveform_ops as wt                               # noqa: E402
@@ -125,6 +125,14 @@ def dead_time_systematic(input_path: Path, times_path: Path | None) -> dict | No
         t = _times(times_path)                              # explicit --times
     if t is None:                                           # event_times.py's output
         t = _times(find_related(input_path, f"{input_path.stem}_times.h5"))
+    if t is None:
+        # The run's PARENT multi-channel file: arrival times are a RUN property
+        # (identical for every channel and every extraction of the same rows), and
+        # only interval statistics are used here -- row alignment with THIS file is
+        # not required.  This is what serves the canonical run00270_ch9-0-10 input,
+        # whose extraction predates the converter-written axis: without this
+        # fallback the documented "<0.03%" dead-time block silently vanished.
+        t = _times(find_related(input_path, f"{dataset_of(input_path.name)}.h5"))
     if t is None or t.size < 3:
         return None
 
@@ -209,7 +217,7 @@ class PanelResult:
     name: str
     labels: np.ndarray     # (N,) str, one of waveform_triage.CLASS_LABELS
     peak_pos: np.ndarray   # (N,) int, absolute sample index of the window peak
-    edge_pos: np.ndarray   # (N,) int, leading-edge half-max crossing (robust timing)
+    edge_pos: np.ndarray   # (N,) float, sub-sample leading-edge half-max crossing
     polarity: str
     baseline: float
     sigma: float
@@ -258,7 +266,10 @@ def classify_panel(raw: np.ndarray, name: str, readout: str,
     # Peak position straight from the oriented window (independent of the label, so
     # it is valid even for SATURATED events whose classify() peak may be unset).
     peak_pos = plo + np.argmax(wf[:, plo:phi], axis=1)
-    edge_pos = wt.leading_edge_pos(wf, baseline, peak_pos)
+    # Sub-sample edges: on integer edges the Delta-t MAD is pinned to the ADC-sample
+    # lattice (it can only read 0, 0.5, 1, ... -> quoted sigma on the 1.4826-rung
+    # ladder; run00270 read exactly 1.48 where the interpolated width is 1.24).
+    edge_pos = wt.leading_edge_pos(wf, baseline, peak_pos, subsample=True)
 
     logger.info("%-6s: polarity=%s baseline=%.4g sigma=%.4g window[%d,%d) -> %s",
                 name, polarity, baseline, sigma, plo, phi, _label_counts(labels))
@@ -662,7 +673,19 @@ def run(args) -> EfficiencyReport:
                          "from the same run.")
 
     # Per-panel cut parameters (PMT preset for PMT panels, SiPM for SiPM panels).
-    panel_kw = {nm: panel_cut_kwargs(readouts[nm], args) for nm in ("top", "middle", "bottom")}
+    # The preset needs a CONCRETE readout: 'auto' used to fall through to the SiPM
+    # preset even on a panel whose polarity votes PMT -- the exact trap
+    # triage_cuts(polarity=...) documents (min_separation=40 on a fast PMT pulse).
+    # Resolve it here with the same polarity vote classify_panel's preparation will
+    # run on the same data, so the cuts and the orientation cannot disagree.
+    cut_readouts = dict(readouts)
+    for nm in ("top", "middle", "bottom"):
+        if readouts[nm] == "auto":
+            pol = wt.polarity_vote(raws[nm])[0]
+            cut_readouts[nm] = wt.detector_for_polarity(pol)
+            logger.info("%-6s readout 'auto' -> %s cut preset (polarity vote: %s).",
+                        nm, cut_readouts[nm], pol)
+    panel_kw = {nm: panel_cut_kwargs(cut_readouts[nm], args) for nm in ("top", "middle", "bottom")}
     for nm in ("top", "middle", "bottom"):
         logger.info("%-6s cuts: noise_prom=%g consec=%d min_sep=%d", nm,
                     panel_kw[nm]["noise_prominence"], panel_kw[nm]["consec"],

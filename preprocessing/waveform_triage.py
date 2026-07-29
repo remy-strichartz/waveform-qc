@@ -412,7 +412,8 @@ def triage(input_path, output_dir, saturation_adc, pulse_lo, pulse_hi,
                              n_pages=gallery_pages, raw_waveforms=raw,
                              raw_adc=gallery_raw_adc)
 
-    # Cut diagnostics (pulse_window.py).  On by default; --no-diagnostics skips.
+    # Cut diagnostics (pulse_window.py).  The CLI leaves them OFF (--diagnostics
+    # opts in); the True default here serves programmatic callers only.
     # Imported lazily because the diagnostics are optional and pulse_window pulls in
     # matplotlib; a --no-diagnostics run should not pay for it.  (Until the common/
     # extraction this was lazy for a harder reason -- pulse_window imported THIS module,
