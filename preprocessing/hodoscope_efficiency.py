@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-hodoscope_efficiency.py
-=======================
-Measure the muon detection efficiency of the MIDDLE panel of a 3-panel
+"""Measure the muon detection efficiency of the MIDDLE panel of a 3-panel
 scintillator telescope (top / middle / bottom) by the standard telescope method.
 
 Method
@@ -16,8 +13,8 @@ have passed through the middle panel as well.  So:
                                     registered a real pulse
     efficiency  = numerator / denominator        (Wilson score CI, see below)
 
-"Registered a real pulse" is decided per event by the waveform triage classifier
-(waveform_triage.classify_events): a panel SAW a particle if its class is CLEAN,
+"Registered a real pulse" is decided per event by the shared triage classifier
+(common.waveform_ops.classify_events): a panel SAW a particle if its class is CLEAN,
 SATURATED, or PILEUP -- i.e. anything that is NOT pure NOISE.  Saturated and
 pile-up events are still real crossings (the panel did detect a particle, the
 charge is merely clipped or accompanied by a second pulse), so they count; only
@@ -37,7 +34,7 @@ Detector types (two supported stand configurations):
   (1) PMT top/bottom + SiPM middle   ->  --tb-readout pmt   --middle-readout sipm
   (2) SiPM top/bottom/middle         ->  (defaults: all sipm)
 SiPM pulses are positive-going, PMT pulses negative-going; each panel is oriented
-accordingly (reuses waveform_triage's polarity handling) before classification.
+accordingly (the shared polarity handling) before classification.
 
 Diagnostics (saved as eff_*.png, alongside the project's diag_*/maker_* figures)
   * eff_dt_coincidence.png  -- top-bottom Delta-t histogram (validates the offset),
@@ -88,7 +85,7 @@ from common.output_paths import (dataset_of, find_related,          # noqa: E402
                                  resolve_input, resolve_results_dir)
 from common.plotting import finish_figure, setup_mpl as _setup_mpl  # noqa: E402
 from common.timing_ops import dead_time_bound                       # noqa: E402
-from common import waveform_ops as wt                               # noqa: E402
+from common import waveform_ops as ops                               # noqa: E402
 
 logger = logging.getLogger("hodoscope_efficiency")
 
@@ -107,9 +104,9 @@ def dead_time_systematic(input_path: Path, times_path: Path | None) -> dict | No
     tau removes every inter-arrival interval below tau, so the smallest interval actually
     observed is a hard upper bound on it (common/timing_ops.dead_time_bound).
 
-    The bound is quoted alongside the statistical CI so the two can be compared: on
-    run00270 dead time costs < 0.03%, far below the binomial error, i.e. no correction is
-    warranted -- which is worth stating explicitly rather than leaving unexamined."""
+    The bound is quoted alongside the statistical CI so the reader can see which one
+    dominates -- "no correction warranted" is worth stating explicitly rather than
+    leaving unexamined."""
     import h5py
 
     def _times(path: Path) -> np.ndarray | None:
@@ -215,7 +212,7 @@ def wilson_interval(k: int, n: int, z: float = 1.96) -> Efficiency:
 @dataclass
 class PanelResult:
     name: str
-    labels: np.ndarray     # (N,) str, one of waveform_triage.CLASS_LABELS
+    labels: np.ndarray     # (N,) str, one of waveform_ops.CLASS_LABELS
     peak_pos: np.ndarray   # (N,) int, absolute sample index of the window peak
     edge_pos: np.ndarray   # (N,) float, sub-sample leading-edge half-max crossing
     polarity: str
@@ -256,12 +253,12 @@ def classify_panel(raw: np.ndarray, name: str, readout: str,
     # Shared rough->refine preparation (provisional baseline, polarity + orient,
     # per-panel auto-window, refined baseline) -- the SAME routine triage runs, so
     # this panel's numbers match a standalone triage of the same channel.
-    prep = wt.prepare_channel(raw, _readout_polarity(readout), plo, phi,
+    prep = ops.prepare_channel(raw, _readout_polarity(readout), plo, phi,
                               auto_window=auto_window, coverage=window_coverage)
     wf, baseline, sigma = prep.oriented, prep.baseline, prep.sigma
     plo, phi, polarity = prep.pulse_lo, prep.pulse_hi, prep.polarity
 
-    labels, _info, sat_thr, _peaks = wt.classify_events(wf, baseline, sigma, plo, phi,
+    labels, _info, sat_thr, _peaks = ops.classify_events(wf, baseline, sigma, plo, phi,
                                                         **cut_kwargs)
     # Peak position straight from the oriented window (independent of the label, so
     # it is valid even for SATURATED events whose classify() peak may be unset).
@@ -269,7 +266,7 @@ def classify_panel(raw: np.ndarray, name: str, readout: str,
     # Sub-sample edges: on integer edges the Delta-t MAD is pinned to the ADC-sample
     # lattice (it can only read 0, 0.5, 1, ... -> quoted sigma on the 1.4826-rung
     # ladder; run00270 read exactly 1.48 where the interpolated width is 1.24).
-    edge_pos = wt.leading_edge_pos(wf, baseline, peak_pos, subsample=True)
+    edge_pos = ops.leading_edge_pos(wf, baseline, peak_pos, subsample=True)
 
     logger.info("%-6s: polarity=%s baseline=%.4g sigma=%.4g window[%d,%d) -> %s",
                 name, polarity, baseline, sigma, plo, phi, _label_counts(labels))
@@ -279,7 +276,7 @@ def classify_panel(raw: np.ndarray, name: str, readout: str,
 
 
 def _label_counts(labels: np.ndarray) -> dict:
-    return {c: int(np.sum(labels == c)) for c in wt.CLASS_LABELS}
+    return {c: int(np.sum(labels == c)) for c in ops.CLASS_LABELS}
 
 
 # ===========================================================================
@@ -325,7 +322,7 @@ def compute_efficiency(top: PanelResult, mid: PanelResult, bot: PanelResult,
     clean_only = wilson_interval(int(clean_hit.sum()), n, z)
 
     middle_breakdown = {c: int(np.sum(coincidence & (mid.labels == c)))
-                        for c in wt.CLASS_LABELS}
+                        for c in ops.CLASS_LABELS}
     return EfficiencyReport(coincidence=coincidence, hit=hit, primary=primary,
                             clean_only=clean_only, middle_breakdown=middle_breakdown)
 
@@ -339,9 +336,7 @@ def print_report(panels: dict[str, PanelResult], rep: EfficiencyReport,
                  dead_time: dict | None = None) -> None:
     N = len(panels["top"].labels)
     n = int(rep.coincidence.sum())
-    print("\n" + "=" * 70)
-    print("Hodoscope middle-panel efficiency")
-    print("=" * 70)
+    print("\nHodoscope middle-panel efficiency")
     print(f"Events per file:            {N:,}")
     print("-" * 70)
     print(f"{'Panel':<8}{'Readout/pol':<14}{'CLEAN':>8}{'SATUR.':>8}{'PILEUP':>8}{'NOISE':>8}")
@@ -358,7 +353,7 @@ def print_report(panels: dict[str, PanelResult], rep: EfficiencyReport,
         print(f"Coincidence (top & bottom saw a pulse):   {n:,}  "
               f"({100*n/N:.1f}% of events)")
     print(f"Middle, among those {'events' if denominator=='all' else 'coincidence events'}:")
-    for c in wt.CLASS_LABELS:
+    for c in ops.CLASS_LABELS:
         k = rep.middle_breakdown[c]
         tag = "  (counts as HIT)" if c in HIT_CLASSES else "  (counts as MISS)"
         print(f"    {c:<10} {k:>8,}  ({100*k/n:5.1f}% of coincidences){tag}" if n else
@@ -382,7 +377,7 @@ def print_report(panels: dict[str, PanelResult], rep: EfficiencyReport,
                    if dead_pct < 0.2 * stat_pct else
                    "COMPARABLE to the statistical error -- correct for it")
         print(f"  => dead time is {verdict}.")
-    print("=" * 70 + "\n")
+    print()
 
 
 # ===========================================================================
@@ -408,21 +403,11 @@ def plot_dt_coincidence(top: PanelResult, bot: PanelResult,
     peak sample: the edge is immune to the coherent pickup and flat-top saturation that
     jitter the peak time, so a genuine coincidence shows up as a tighter peak here.
 
-    TWO THINGS THIS PLOT USED TO GET WRONG, both of which inflated the quoted width by
-    ~12x on run00270 (18.50 -> 1.48 samples):
-
-    * It selected on the efficiency DENOMINATOR mask.  Under the default
-      --denominator all that mask is all-ones, so Delta-t was built from every event --
-      including the ~17% where a panel saw NO pulse and its "leading edge" is therefore
-      a noise fluctuation landing anywhere in the record (those events alone have
-      std 42.7, with 24% beyond |Delta-t| > 20).  Delta-t between two panels is only
-      DEFINED when both fired, so the selection is now top.saw_pulse & bot.saw_pulse,
-      independent of how the efficiency denominator is defined.
-    * It quoted mean +/- np.std.  Delta-t keeps hard outliers (marginal pulses, residual
-      mis-picks) even after that cut, and a plain std is not robust to them: it read
-      6.69 where the MAD sigma reads 1.48, and the drawn "+/- 1 sigma" band held 95% of
-      the events rather than 68%.  The width is now the robust MAD sigma -- the same
-      lesson the boxcar-window study learned about np.std on heavy tails.
+    Two deliberate choices: the selection is top.saw_pulse & bot.saw_pulse (never the
+    efficiency denominator -- Delta-t is only DEFINED when both panels fired; a no-pulse
+    panel's "edge" is a noise pick landing anywhere in the record), and the quoted width
+    is the robust MAD sigma (Delta-t keeps hard outliers, which inflate a plain std
+    severalfold).
     """
     plt = _setup_mpl(show)
     both = top.saw_pulse & bot.saw_pulse
@@ -480,7 +465,7 @@ def plot_noise_residuals(raws: dict[str, np.ndarray], panels: dict[str, PanelRes
 
     The residual is the pre-pulse region (samples before each panel's own window
     start) minus that panel's baseline -- exactly the samples that set the noise
-    floor in wt.global_baseline_noise.  Showing the three side by side (each with a
+    floor in ops.global_baseline_noise.  Showing the three side by side (each with a
     least-squares Gaussian fit, its MAD, and the panel's global median baseline)
     reveals whether the panels share a consistent noise level, or whether one channel
     is noisier / has an offset baseline -- which would shift its noise_prominence cut
@@ -488,13 +473,9 @@ def plot_noise_residuals(raws: dict[str, np.ndarray], panels: dict[str, PanelRes
     from (sigma = 1.4826 * MAD); the Gaussian sigma is the least-squares comparison.
 
     BINNING: the residual is a difference of INTEGER ADC samples and a median baseline,
-    so it lives on an integer lattice.  The bins must therefore be integer-ALIGNED (unit
-    width, edges on half-integers).  They used to be `linspace(-span, span, 121)` -- 0.617
-    ADC wide on run00270 -- so bins alternately caught a lattice point or nothing, and the
-    least-squares fit was dragged down to the mean of that spike/zero comb: the drawn curve
-    reproduced only 0.60-0.62 of the observed peak density on ALL THREE panels (the ratio
-    IS the bin width).  Unit bins restore it to 0.97-1.01 while moving the fitted sigma by
-    under 3%.
+    so it lives on an integer lattice, and the bins must be integer-ALIGNED (unit width,
+    edges on half-integers).  Fractional-width bins alternately catch a lattice point or
+    nothing, and a least-squares fit gets dragged down to the mean of that spike/zero comb.
 
     NON-GAUSSIANITY: these baselines are not always Gaussian (spike noise gives a peaked,
     heavy-tailed residual).  A single fitted sigma would hide that, so RMS/MAD-sigma is
@@ -643,7 +624,7 @@ def panel_cut_kwargs(readout: str, args) -> dict:
     the CLI override it.  So a PMT top/bottom panel automatically gets the higher
     spike threshold, shorter flat-top and smaller separation, while the SiPM middle
     keeps the standard values -- in a single run."""
-    preset = wt.DETECTOR_PRESETS["pmt" if readout == "pmt" else "sipm"]
+    preset = ops.DETECTOR_PRESETS["pmt" if readout == "pmt" else "sipm"]
     pick = lambda cli, key: preset[key] if cli is None else cli
     return dict(
         saturation_adc=args.saturation_adc,
@@ -663,7 +644,7 @@ def run(args) -> EfficiencyReport:
     sources = _resolve_sources(args)
     for nm, (path, c) in sources.items():
         logger.info("%-6s panel <- %s [channel %d, %s]", nm, path, c, readouts[nm])
-    raws = {nm: wt.load_waveforms(path, channel=c)[0] for nm, (path, c) in sources.items()}
+    raws = {nm: ops.load_waveforms(path, channel=c)[0] for nm, (path, c) in sources.items()}
 
     # Row-aligned coincidence requires identical event counts.
     lengths = {nm: r.shape[0] for nm, r in raws.items()}
@@ -681,8 +662,8 @@ def run(args) -> EfficiencyReport:
     cut_readouts = dict(readouts)
     for nm in ("top", "middle", "bottom"):
         if readouts[nm] == "auto":
-            pol = wt.polarity_vote(raws[nm])[0]
-            cut_readouts[nm] = wt.detector_for_polarity(pol)
+            pol = ops.polarity_vote(raws[nm])[0]
+            cut_readouts[nm] = ops.detector_for_polarity(pol)
             logger.info("%-6s readout 'auto' -> %s cut preset (polarity vote: %s).",
                         nm, cut_readouts[nm], pol)
     panel_kw = {nm: panel_cut_kwargs(cut_readouts[nm], args) for nm in ("top", "middle", "bottom")}

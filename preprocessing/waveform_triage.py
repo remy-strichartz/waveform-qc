@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-waveform_triage.py
-==================
-Standalone triage tool for single-channel hodoscope waveform windows.
+"""Standalone triage tool for single-channel waveform windows.
 
 Reads an HDF5 file of waveform windows and classifies each
 event into one of four classes:
@@ -99,9 +96,7 @@ def print_diagnostics(source, dataset, n_events, length, baseline, sigma, polari
     holding the run whole); `n_sample` is the streaming path's prep-sample size and
     marks the block as streaming when given.
     """
-    print("\n" + "=" * 64)
-    print("Waveform triage diagnostics" + ("  (streaming)" if n_sample is not None else ""))
-    print("=" * 64)
+    print("\nWaveform triage" + ("  (streaming)" if n_sample is not None else ""))
     print(f"Source file:        {source}")
     if dataset:
         print(f"Dataset:            {dataset}")
@@ -125,7 +120,7 @@ def print_diagnostics(source, dataset, n_events, length, baseline, sigma, polari
     for label in ("SATURATED", "PILEUP", "NOISE", "CLEAN"):
         c = int(counts[label])
         print(f"  {label + ':':<11}{c:>10,}  ({(100 * c / n_events if n_events else 0.0):5.1f}%)")
-    print("=" * 64 + "\n")
+    print()
 
 
 def plot_overview(waveforms, baseline, sat, pileup, noise, clean,

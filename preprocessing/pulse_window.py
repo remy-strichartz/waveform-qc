@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-pulse_window.py
-===============
-General-purpose diagnostic tool for the waveform_triage cuts.
+"""General-purpose diagnostic tool for the triage cuts.
 
 The triage classifier applies a chain of thresholds (pulse-window height, leading-
 edge shape, record "dominance", saturation flat-top, pile-up extra height /
@@ -52,7 +49,7 @@ from common.output_paths import resolve_input                       # noqa: E402
 from common.peakfind import find_peaks_manual                       # noqa: E402
 from common.plotting import (finish_figure as _finish,              # noqa: E402
                              paged_figure, setup_mpl as _setup_mpl)
-from common import waveform_ops as wt                               # noqa: E402
+from common import waveform_ops as ops                               # noqa: E402
 
 logger = logging.getLogger("pulse_window")
 
@@ -97,7 +94,7 @@ SCAN_PARAMS = {
 # ===========================================================================
 
 def global_baseline(waveforms: np.ndarray, pulse_lo: int) -> tuple[float, float]:
-    return wt.global_baseline_noise(waveforms, pulse_lo)
+    return ops.global_baseline_noise(waveforms, pulse_lo)
 
 
 def local_baseline(waveforms: np.ndarray, pulse_lo: int) -> tuple[np.ndarray, np.ndarray]:
@@ -111,10 +108,10 @@ def local_baseline(waveforms: np.ndarray, pulse_lo: int) -> tuple[np.ndarray, np
 
 
 def classify_all(waveforms, base, sigma, P: Params) -> dict:
-    """Run the real triage via wt.classify_events (the shared entry point, so the
+    """Run the real triage via ops.classify_events (the shared entry point, so the
     class priority pileup > saturated > noise > clean is triage's own, not a local
     copy) and return the four exclusive class masks plus the per-event info list."""
-    labels, info, sat_thr, peaks = wt.classify_events(
+    labels, info, sat_thr, peaks = ops.classify_events(
         waveforms, base, sigma, P.pulse_lo, P.pulse_hi,
         saturation_adc=P.saturation_adc, pileup_prominence=P.pileup_prominence,
         noise_prominence=P.noise_prominence, extra_frac=P.extra_frac,
@@ -127,7 +124,7 @@ def classify_all(waveforms, base, sigma, P: Params) -> dict:
     # cuts AS APPLIED: on a no-rail channel the saturation threshold is only the
     # 99.99th-pct advisory fallback and the classifier flags NOTHING, so the cutflow
     # and the flat-top panel must say so instead of drawing a cut that is not live.
-    _, _, rail_found = wt.detect_saturation_cut(waveforms, P.saturation_adc,
+    _, _, rail_found = ops.detect_saturation_cut(waveforms, P.saturation_adc,
                                                 consec=P.consec, rail_tol=P.rail_tol)
     return {"sat": labels == "SATURATED", "pileup": labels == "PILEUP",
             "noise": labels == "NOISE", "clean": labels == "CLEAN",
@@ -171,13 +168,13 @@ def compute_features(waveforms, base, sigma, P: Params) -> dict:
         # Mirror _pulse_dominates' SNR-aware comparable-crest height (floored at
         # dom_floor_sigma*sigma) so this diagnostic matches what the cut actually does.
         osc_height = max(0.5 * h, P.dom_floor_sigma * sigma)
-        dom_count[i] = wt._count_big_peaks(wf, base, osc_height, P.min_separation) if h > 0 else 0
+        dom_count[i] = ops._count_big_peaks(wf, base, osc_height, P.min_separation) if h > 0 else 0
         charge[i] = float(np.sum(wf[P.pulse_lo:P.pulse_hi] - base))
 
     # Per-extra-candidate diagnostics (mirror classify's inner loop, recording the
     # quantity each gate tests rather than only the final decision).
     find_height = base + P.extra_min_sigma * sigma
-    # Same vectorized pre-screen as wt.classify: a candidate must lie OUTSIDE the
+    # Same vectorized pre-screen as ops.classify: a candidate must lie OUTSIDE the
     # pulse window and clear find_height, so events whose outside-window maximum
     # stays below it cannot yield any candidate -- skip their peak search.
     outside_max = np.maximum(waveforms[:, :P.pulse_lo].max(axis=1, initial=-np.inf),
@@ -201,7 +198,7 @@ def compute_features(waveforms, base, sigma, P: Params) -> dict:
             ph = wf[p] - base
             lo_w, hi_w = max(p - P.undershoot_window, 0), min(p + P.undershoot_window + 1, L)
             under = (float(wf[lo_w:hi_w].min()) - base) / sigma
-            shape_ok = wt._is_real_pulse(wf, p, base, extra_thresh)
+            shape_ok = ops._is_real_pulse(wf, p, base, extra_thresh)
             vetoed = 0 < (p - c) <= P.post_pulse_veto
             # Per-gate rejection flags (a candidate may fail several at once).
             fail_height = ph < extra_thresh
@@ -266,18 +263,16 @@ def cmd_window(waveforms, args):
     q_lo, q_hi = (int(np.floor(v)) for v in np.percentile(positions, [tail, 100 - tail]))
     med = np.median(waveforms[real] - base, axis=0)
     mpk = int(med.argmax())
-    rise, fall = wt.median_pulse_extent(med, mpk)
+    rise, fall = ops.median_pulse_extent(med, mpk)
     # Recommend via the SAME routine the auto-window applies (incl. its max_lead
     # robustness cap), so the 'recommended' shown here is exactly the window that
     # triage / hodoscope_efficiency would actually use -- one source of truth.
-    rec = wt.recommend_window(waveforms, base, sigma, min_sigma=args.min_sigma,
+    rec = ops.recommend_window(waveforms, base, sigma, min_sigma=args.min_sigma,
                               coverage=args.coverage, pad=args.pad)
     rec_lo, rec_hi = rec if rec is not None else (max(q_lo - rise - args.pad, 5),
                                                   min(q_hi + fall + args.pad, L))
 
-    print("\n" + "=" * 64)
-    print("Pulse-window analysis")
-    print("=" * 64)
+    print("\nPulse-window analysis")
     print(f"Events: {N:,} (length {L})   baseline {base:.4g}   sigma {sigma:.4g}")
     print(f"Real pulses: {positions.size:,}   peak pos min/med/max: "
           f"{positions.min()}/{int(np.median(positions))}/{positions.max()}")
@@ -290,10 +285,9 @@ def cmd_window(waveforms, args):
         inside = np.mean((positions >= lo) & (positions < hi))
         before = np.mean(positions < lo)
         after = np.mean(positions >= hi)
-        print("-" * 64)
         print(f"CURRENT [{lo}, {hi}):  inside {100*inside:.1f}%   "
               f"before-lo {100*before:.1f}%   after-hi {100*after:.1f}%")
-    print("=" * 64 + "\n")
+    print()
 
     if args.save_plot or not args.no_show:
         plt = _setup_mpl(not args.no_show)
@@ -304,7 +298,7 @@ def cmd_window(waveforms, args):
         # ADC-clipped events).  The CF edge is saturation-immune, so what remains
         # early+tall here is genuine trigger time-walk.  The window recommendation
         # itself still uses argmax positions -- the window must contain the peaks.
-        edges_cf = wt.leading_edge_pos(waveforms[real], base, peak_pos[real],
+        edges_cf = ops.leading_edge_pos(waveforms[real], base, peak_pos[real],
                                        frac=0.5, subsample=True)
         fig, ax = plt.subplots(3, 1, figsize=(11, 11), sharex=True)
         ax[0].hist(edges_cf, bins=min(L, 400), color="C0", alpha=0.8)
@@ -347,11 +341,9 @@ def cmd_features(waveforms, args):
 
     # ---- cutflow: additive (priority PILEUP > SATURATED > NOISE > CLEAN) ----
     real_fail = np.array([info["center_peak"] is None for info in cls["info"]])
-    print("\n" + "=" * 70)
-    print("CUTFLOW  (baseline %.4g, sigma %.4g, window [%d,%d))"
+    print("\nCUTFLOW  (baseline %.4g, sigma %.4g, window [%d,%d))"
           % (base, sigma, P.pulse_lo, P.pulse_hi))
     print("  priority: PILEUP > SATURATED > NOISE > CLEAN  (rows sum to total)")
-    print("=" * 70)
     rail_note = ("rail " + format(cls["sat_thr"], ".0f") if cls["rail_found"] else
                  f"NO true rail; {cls['sat_thr']:.0f} is the 99.99th-pct advisory, cut OFF")
     print(f"  events total ........................... {N:>8,}")
@@ -367,7 +359,7 @@ def cmd_features(waveforms, args):
     print(f"    near the saturation rail ............ "
           f"{int((F['row_max'] >= cls['sat_thr']*(1-P.rail_tol)).sum()):>8,}"
           + ("" if cls["rail_found"] else "   (advisory threshold; none are flagged)"))
-    print("=" * 70 + "\n")
+    print()
 
     # ---- per-gate breakdown of rejected extra-pulse candidates ----
     n_ex = int(F["ex_h"].size)
@@ -544,9 +536,7 @@ def cmd_baseline(waveforms, args):
     drift_span = float(blk_median.max() - blk_median.min())
     drift_max_dev = float(np.max(np.abs(blk_median - g_base)))
 
-    print("\n" + "=" * 66)
-    print("Baseline / noise: GLOBAL (pooled) vs LOCAL (per event)")
-    print("=" * 66)
+    print("\nBaseline / noise: GLOBAL (pooled) vs LOCAL (per event)")
     print(f"  GLOBAL baseline = {g_base:.4g} ADC      sigma = {g_sigma:.4g} ADC")
     print(f"  LOCAL  baseline: median {np.median(l_base):.4g}  "
           f"spread (IQR) {np.subtract(*np.percentile(l_base, [75, 25])):.3g}  "
@@ -560,7 +550,7 @@ def cmd_baseline(waveforms, args):
           f"LOCAL={1.4826*np.median(np.abs(charge_local-np.median(charge_local))):.4g}")
     print(f"  drift over run ({n_blocks} blocks): block-median span = {drift_span:.3g} ADC, "
           f"max |block - global| = {drift_max_dev:.3g} ADC ({100*drift_max_dev/g_sigma:.1f}% of sigma)")
-    print("=" * 66 + "\n")
+    print()
 
     if args.save_plot or not args.no_show:
         plt = _setup_mpl(not args.no_show)
@@ -623,9 +613,7 @@ def cmd_spectrum(waveforms, args):
                            prominence=max(smooth.max() * 0.02, 3),
                            distance=max(args.bins // 40, 2))
 
-    print("\n" + "=" * 60)
-    print(f"Spectrum ({args.metric})   {counts_line(cls)}")
-    print("=" * 60)
+    print(f"\nSpectrum ({args.metric})   {counts_line(cls)}")
     print(f"  range used: [{lo:.3g}, {hi:.3g}]   bins: {args.bins}")
     if pk.size:
         print("  peaks in CLEAN spectrum at:")
@@ -633,7 +621,7 @@ def cmd_spectrum(waveforms, args):
             print(f"    {centers[p]:.4g}   (~{int(smooth[p])} counts/bin)")
     else:
         print("  no clear peaks found in the clean spectrum.")
-    print("=" * 60 + "\n")
+    print()
 
     if args.save_plot or not args.no_show:
         plt = _setup_mpl(not args.no_show)
@@ -749,9 +737,7 @@ def run_all(waveforms, out_dir, show=False, pulse_lo=None, pulse_hi=None,
     phi = pulse_hi if pulse_hi is not None else P.pulse_hi
     overrides = dict(cut_overrides or {})
 
-    print("\n" + "#" * 70)
-    print("# Triage diagnostics  ->  " + str(out) + ("   (full)" if full else ""))
-    print("#" * 70)
+    print("\nTriage diagnostics -> " + str(out) + ("   (full)" if full else ""))
 
     def cut_ns(**kw):
         """Namespace with every Params field (None = preset default), the caller's
@@ -795,7 +781,7 @@ def params_from_args(args) -> Params:
     # value explicitly set on the CLI override it -- so --detector pmt gives the
     # PMT cut defaults and the diagnostics match a triage PMT-mode run.
     P = Params()
-    preset = wt.DETECTOR_PRESETS[getattr(args, "detector", "sipm")]
+    preset = ops.DETECTOR_PRESETS[getattr(args, "detector", "sipm")]
     for key in ("noise_prominence", "consec", "min_separation"):
         setattr(P, key, preset[key])
     for f in P.__dataclass_fields__:
@@ -893,7 +879,7 @@ def main():
     # Bare filename -> waveform_files/, including its per-run folders (the same
     # lookup waveform_triage does); an explicit path is used as given.
     args.input = resolve_input(args.input)
-    waveforms, _ = wt.load_waveforms(args.input)
+    waveforms, _ = ops.load_waveforms(args.input)
 
     # Orient negative (PMT) records up-front so every sub-command sees up-going
     # pulses, exactly as waveform_triage does internally.  The 'gallery' mode just
@@ -902,12 +888,12 @@ def main():
     # Polarity defaults to the --detector preset (sipm->positive, pmt->negative).
     polarity = getattr(args, "polarity", None)
     if polarity is None:
-        polarity = wt.DETECTOR_PRESETS[getattr(args, "detector", "sipm")]["polarity"]
+        polarity = ops.DETECTOR_PRESETS[getattr(args, "detector", "sipm")]["polarity"]
     if args.mode != "gallery" and polarity != "positive":
         plo = getattr(args, "pulse_lo", None) or Params().pulse_lo
         base, _ = global_baseline(waveforms, plo)
-        polarity = wt.resolve_polarity(polarity, waveforms)
-        waveforms = wt.orient_waveforms(waveforms, polarity, base)
+        polarity = ops.resolve_polarity(polarity, waveforms)
+        waveforms = ops.orient_waveforms(waveforms, polarity, base)
         logger.info("Polarity %s: analysing the baseline-reflected (up-going) record.", polarity)
 
     {"window": cmd_window, "features": cmd_features, "scan": cmd_scan,
