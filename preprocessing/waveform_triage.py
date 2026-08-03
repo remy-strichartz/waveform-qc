@@ -257,9 +257,9 @@ def read_row_aligned_aux(input_path, n_events: int) -> dict:
     so they can be carried through, row-filtered, into each class subset file.
 
     Returns {name: (array, attrs_dict)} for every dataset whose first axis
-    matches the event count -- the time axis (``event_time_unix``), the fine
-    trigger-time-tag source (``headers_*``) and the parent-file row map
-    (``source_event_index``).  Datasets not aligned to the event axis (e.g.
+    matches the event count -- the time axes (``event_time_unix`` and the recovered
+    ``event_time_rel_s``), the fine trigger-time-tag source (``headers_*``) and the
+    parent-file row map (``source_event_index``).  Datasets not aligned to the event axis (e.g.
     ``selected_source_channels``) are skipped so a subset never carries a
     mis-length array.  A file with none of these (e.g. the CAEN path) yields {}.
     """
@@ -273,7 +273,10 @@ def _read_row_aligned_aux_from_file(f, n_events: int) -> dict:
     which holds the input file open for the whole run, does not have to reopen it
     -- reopening the same file read-only can trip HDF5 file locking)."""
     import h5py
-    keep = ("source_event_index", "event_time_unix")
+    # event_time_rel_s: the RECOVERED run-time axis (clock_recovery) -- energy_reco's
+    # --exclude-hours and --gain-correct read exactly this name, so a clean export that
+    # drops it silently loses both gates downstream.
+    keep = ("source_event_index", "event_time_unix", "event_time_rel_s")
     aux: dict[str, tuple[np.ndarray, dict]] = {}
     for name, ds in f.items():
         if not isinstance(ds, h5py.Dataset):
