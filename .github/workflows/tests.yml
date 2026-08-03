@@ -1,6 +1,6 @@
 name: tests
 
-# All four suites are synthetic end-to-end regressions -- they build their own waveforms
+# All five suites are synthetic end-to-end regressions -- they build their own waveforms
 # and touch no real data, which is exactly what makes them runnable here.  ~45 s combined.
 on:
   push:
@@ -29,6 +29,9 @@ jobs:
 
       - name: common
         run: python common/tests/test_output_paths.py
+
+      - name: common (declip)
+        run: python common/tests/test_declip.py
 
       - name: file_manipulation
         run: python file_manipulation/tests/test_file_manipulation.py
