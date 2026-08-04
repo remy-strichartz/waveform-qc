@@ -1,10 +1,21 @@
-# Raw / converted waveform data (hundreds of MB - GB; regenerate with
-# file_manipulation/midas_to_h5.py + extract_channels.py / intake.py)
+# Raw / converted waveform data, wherever it lands.  The extension rules carry as much
+# weight as the folder one: `waveform_triage.py --export` writes per-class .h5 subsets
+# INSIDE the results trees below, and two files here (run00270.mid at 941 MB,
+# run00270.h5 at 307 MB) are over GitHub's 100 MB per-file hard limit -- one of those
+# staged by accident does not warn, it rejects the whole push.  Regenerate with
+# file_manipulation/midas_to_h5.py + extract_channels.py / intake.py.
 waveform_files/
+*.h5
+*.h5.gz
+*.mid
 
-# Generated results trees (regenerate with each pipeline's driver; see
-# energy_reconstruction/README.md for the production commands)
-*_results/
+# Generated results trees: the FIGURES and the QC record (logs/, manifest.txt,
+# final_run_summary.json, the per-run *.json) ARE tracked.  They are the shareable
+# product of this repo -- with them a reader can check a number, or see what a channel's
+# spectrum actually looks like, without re-running an 80-minute batch against data they
+# do not have.  The .h5 subsets living in the same folders are data, and the rules above
+# keep them out.  Regenerate with each pipeline's driver; see
+# energy_reconstruction/README.md for the production commands.
 
 # Python bytecode
 __pycache__/
