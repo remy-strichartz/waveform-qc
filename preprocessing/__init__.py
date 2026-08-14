@@ -2,5 +2,5 @@
 
 The triage driver, the hodoscope efficiency measurement and the pulse-window tuner.  The
 classification primitives these share with the rest of the project live in
-common/waveform_ops.py.  Depends on `common` only.
+hodoscope_common/waveform_ops.py.  Depends on `hodoscope_common` only.
 """

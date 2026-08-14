@@ -1,7 +1,7 @@
 name: tests
 
-# All five suites are synthetic end-to-end regressions -- they build their own waveforms
-# and touch no real data, which is exactly what makes them runnable here.  ~45 s combined.
+# The suite is a synthetic end-to-end regression -- it builds its own waveforms and touches
+# no real data, so it needs neither the waveform_files tree nor $WAVEFORM_FILES.
 on:
   push:
     branches: [main]
@@ -17,27 +17,27 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # waveform-io supplies `hodoscope_common`.  It is a separate PRIVATE repo, so this
+      # step needs a token with read access to it: set the WAVEFORM_IO_TOKEN secret to a
+      # fine-grained PAT with Contents:Read on remy-strichartz/waveform-io.  The default
+      # GITHUB_TOKEN is scoped to THIS repo only and will not work.
+      # If waveform-io is ever made public, delete the `token:` line -- nothing else changes.
+      - uses: actions/checkout@v5
+        with:
+          repository: remy-strichartz/waveform-io
+          path: .waveform-io
+          token: ${{ secrets.WAVEFORM_IO_TOKEN }}
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
 
       - run: pip install -r requirements.txt
+      - run: pip install -e ./.waveform-io
 
       - name: Record the environment under test
         run: python -c "import numpy,scipy,h5py,matplotlib as m;print('numpy',numpy.__version__);print('scipy',scipy.__version__);print('h5py',h5py.__version__);print('matplotlib',m.__version__)"
 
-      - name: common
-        run: python common/tests/test_output_paths.py
-
-      - name: common (declip)
-        run: python common/tests/test_declip.py
-
-      - name: file_manipulation
-        run: python file_manipulation/tests/test_file_manipulation.py
-
       - name: preprocessing
         run: python preprocessing/tests/test_preprocessing.py
-
-      - name: energy_reconstruction
-        run: python energy_reconstruction/tests/test_energy_reconstruction.py

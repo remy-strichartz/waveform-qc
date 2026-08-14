@@ -65,8 +65,8 @@ import numpy as np
 # the path; under an editable install (pip install -e .) this line is a no-op.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from common.output_paths import resolve_input, resolve_results_dir      # noqa: E402
-from common.waveform_ops import (DETECTOR_PRESETS, _resolve_waveform_dataset,  # noqa: E402
+from hodoscope_common.output_paths import resolve_input, resolve_results_dir      # noqa: E402
+from hodoscope_common.waveform_ops import (DETECTOR_PRESETS, _resolve_waveform_dataset,  # noqa: E402
                                  classify, detect_saturation, detect_saturation_cut,
                                  load_waveforms, orient_waveforms, prepare_channel)
 
@@ -193,7 +193,7 @@ def plot_gallery(waveforms, baseline, mask, info, title, fname_stem,
     live with the `r` key, or start in it via `raw_adc=True`.  Only the DISPLAY
     changes; classification is untouched."""
     import matplotlib.pyplot as plt
-    from common.plotting import paged_figure
+    from hodoscope_common.plotting import paged_figure
     idx = np.flatnonzero(mask)
     if idx.size == 0:
         logger.info("No events in class '%s'; skipping gallery.", title)
@@ -413,9 +413,9 @@ def triage(input_path, output_dir, saturation_adc, pulse_lo, pulse_hi,
     # Cut diagnostics (pulse_window.py).  The CLI leaves them OFF (--diagnostics
     # opts in); the True default here serves programmatic callers only.
     # Imported lazily because the diagnostics are optional and pulse_window pulls in
-    # matplotlib; a --no-diagnostics run should not pay for it.  (Until the common/
+    # matplotlib; a --no-diagnostics run should not pay for it.  (Until the hodoscope_common/
     # extraction this was lazy for a harder reason -- pulse_window imported THIS module,
-    # so the two were circular.  Both now take the primitives from common.waveform_ops.)
+    # so the two were circular.  Both now take the primitives from hodoscope_common.waveform_ops.)
     # The oriented copy is passed so the diagnostics match the classification above
     # (it is already pointing up, so pulse_window treats it as positive polarity),
     # and the ACTUAL cut values used here are passed through so the diagnostics

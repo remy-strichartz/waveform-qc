@@ -14,7 +14,7 @@ have passed through the middle panel as well.  So:
     efficiency  = numerator / denominator        (Wilson score CI, see below)
 
 "Registered a real pulse" is decided per event by the shared triage classifier
-(common.waveform_ops.classify_events): a panel SAW a particle if its class is CLEAN,
+(hodoscope_common.waveform_ops.classify_events): a panel SAW a particle if its class is CLEAN,
 SATURATED, or PILEUP -- i.e. anything that is NOT pure NOISE.  Saturated and
 pile-up events are still real crossings (the panel did detect a particle, the
 charge is merely clipped or accompanied by a second pulse), so they count; only
@@ -81,11 +81,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # repo root (s
 
 # The real triage classifier (so the cut logic is shared, not duplicated), the shared
 # waveform-file and per-run results-folder conventions, and the DAQ dead-time bound.
-from common.output_paths import (dataset_of, find_related,          # noqa: E402
+from hodoscope_common.output_paths import (dataset_of, find_related,          # noqa: E402
                                  resolve_input, resolve_results_dir)
-from common.plotting import finish_figure, setup_mpl as _setup_mpl  # noqa: E402
-from common.timing_ops import dead_time_bound                       # noqa: E402
-from common import waveform_ops as ops                               # noqa: E402
+from hodoscope_common.plotting import finish_figure, setup_mpl as _setup_mpl  # noqa: E402
+from hodoscope_common.timing_ops import dead_time_bound                       # noqa: E402
+from hodoscope_common import waveform_ops as ops                               # noqa: E402
 
 logger = logging.getLogger("hodoscope_efficiency")
 
@@ -102,7 +102,7 @@ def dead_time_systematic(input_path: Path, times_path: Path | None) -> dict | No
     never recorded, so it is missing from BOTH the numerator and the denominator and the
     offline efficiency cannot see it.  Only the arrival times can bound it -- a dead time
     tau removes every inter-arrival interval below tau, so the smallest interval actually
-    observed is a hard upper bound on it (common/timing_ops.dead_time_bound).
+    observed is a hard upper bound on it (hodoscope_common/timing_ops.dead_time_bound).
 
     The bound is quoted alongside the statistical CI so the reader can see which one
     dominates -- "no correction warranted" is worth stating explicitly rather than

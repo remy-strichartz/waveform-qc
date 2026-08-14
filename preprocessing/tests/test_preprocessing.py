@@ -44,8 +44,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # repo root
 
-from common import peakfind as pf                            # noqa: E402
-from common import waveform_ops as wt                        # noqa: E402
+from hodoscope_common import peakfind as pf                            # noqa: E402
+from hodoscope_common import waveform_ops as wt                        # noqa: E402
 from preprocessing import hodoscope_efficiency as hodo       # noqa: E402
 
 

@@ -7,7 +7,7 @@ fraction / separation / undershoot, ...).  This tool makes each of those cuts an
 its parameters VISIBLE: where the threshold sits relative to the population it
 acts on, how many events it moves, and how the energy spectrum changes.
 
-It calls the REAL triage functions (common.waveform_ops.classify / detect_saturation /
+It calls the REAL triage functions (hodoscope_common.waveform_ops.classify / detect_saturation /
 global_baseline_noise) so what you see is exactly what the classifier does.
 
 Sub-commands
@@ -45,11 +45,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # repo root (s
 # Shared waveform-file lookup (bare filename -> waveform_files/, including its per-run
 # folders) and the shared classification primitives -- the same ones waveform_triage and
 # hodoscope_efficiency cut on, so a window tuned here means the same thing there.
-from common.output_paths import resolve_input                       # noqa: E402
-from common.peakfind import find_peaks_manual                       # noqa: E402
-from common.plotting import (finish_figure as _finish,              # noqa: E402
+from hodoscope_common.output_paths import resolve_input                       # noqa: E402
+from hodoscope_common.peakfind import find_peaks_manual                       # noqa: E402
+from hodoscope_common.plotting import (finish_figure as _finish,              # noqa: E402
                              paged_figure, setup_mpl as _setup_mpl)
-from common import waveform_ops as ops                               # noqa: E402
+from hodoscope_common import waveform_ops as ops                               # noqa: E402
 
 logger = logging.getLogger("pulse_window")
 

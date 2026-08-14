@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "waveform-qc"
+version = "0.1.0"
+description = "Muon hodoscope per-event triage: what each recorded event actually is, hodoscope efficiency, pulse-window tuning"
+requires-python = ">=3.11"
+
+# Kept in sync with requirements.txt.  scipy is needed (optimize, signal) but NOT the
+# scipy>=1.16 floor that waveform-analysis carries: that floor exists only for
+# scipy.stats.landau, which is the muon-line fit and lives entirely in that repo.
+#
+# waveform-io is not on PyPI.  Install it first, from a local checkout or a pinned tag --
+# see requirements.txt.  With it already present in the environment, `pip install -e .`
+# here resolves normally.
+dependencies = [
+    "numpy",
+    "h5py",
+    "matplotlib",
+    "scipy",
+    "waveform-io",
+]
+
+[tool.setuptools]
+packages = [
+    "preprocessing",
+]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "preprocessing/tests",
+]

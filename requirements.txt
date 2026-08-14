@@ -1,0 +1,24 @@
+# Dependencies for waveform-qc.  See the Environment section in README.md.
+#
+# waveform-io supplies `hodoscope_common` (the file layout and the waveform primitives).
+# It is NOT on PyPI -- install it first, one of two ways:
+#
+#   development, tracks your local edits:
+#       pip install -e ../waveform-io
+#
+#   reproducible, pinned:
+#       pip install "waveform-io @ git+ssh://git@github.com/remy-strichartz/waveform-io.git@v0.1.0"
+#
+#   The repo is private, so the git form needs SSH (as written) or a PAT -- pip cannot use
+#   the token that `gh auth` keeps in the keyring.
+#
+# scipy is used for optimize/signal only.  The scipy>=1.16 floor that waveform-analysis
+# carries does NOT apply here: it exists for scipy.stats.landau, which this repo never calls.
+#
+# No floors established; the versions below are what the results in this repo were produced
+# under.
+#   numpy 2.4.1   scipy 1.16.x   h5py 3.16.0   matplotlib 3.10.8
+numpy
+scipy
+h5py
+matplotlib

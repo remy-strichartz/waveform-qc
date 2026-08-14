@@ -42,11 +42,13 @@ analyze as inputs in their own right (the canonical energy-reconstruction batch 
 | `pulse_window.py` | makes the classifier's cuts *visible* — where each threshold sits, what it moves |
 | `hodoscope_efficiency.py` | the physics result: middle-panel muon efficiency by the telescope method |
 
-The cuts themselves are not in this package. They live in
-[`common/waveform_ops.py`](../common/waveform_ops.py) — baseline/noise, the polarity vote,
-the auto pulse window, the flat-top saturation test and `classify_events` — because
-`energy_reconstruction` and `file_manipulation/channel_diagnostics.py` apply the same ones
-and must not drift from these. Also in `common/`: `peakfind.py` (a dependency-free
+The cuts themselves are not in this repo. They live in `hodoscope_common/waveform_ops.py`,
+in the [waveform-io](https://github.com/remy-strichartz/waveform-io) repo — baseline/noise,
+the polarity vote, the auto pulse window, the flat-top saturation test and
+`classify_events` — because `energy_reconstruction` and
+`file_manipulation/channel_diagnostics.py` apply the same ones and must not drift from
+these. That shared ownership is exactly why they sit in a repo both sides install rather
+than in either one. Also in `hodoscope_common/`: `peakfind.py` (a dependency-free
 `scipy.signal.find_peaks`, so no cut hides in an opaque C routine) and `plotting.py`
 (shared matplotlib setup, forces `Agg` when only saving).
 
@@ -137,7 +139,7 @@ the panel's edge, so angled tracks can clip out the side) rather than detection 
 the paper quotes 98±1% intrinsic panel efficiency; settling that split would take a
 position/angle study, which no tool here performs.
 
-## common/peakfind.py
+## hodoscope_common/peakfind.py
 
 A small, vectorized stand-in for `scipy.signal.find_peaks`, reproducing the `height`,
 `distance` and `prominence` filters *in scipy's order* so results match. It exists so the
