@@ -17,16 +17,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # waveform-io supplies `hodoscope_common`.  It is a separate PRIVATE repo, so this
-      # step needs a token with read access to it: set the WAVEFORM_IO_TOKEN secret to a
-      # fine-grained PAT with Contents:Read on remy-strichartz/waveform-io.  The default
-      # GITHUB_TOKEN is scoped to THIS repo only and will not work.
-      # If waveform-io is ever made public, delete the `token:` line -- nothing else changes.
+      # waveform-io supplies `hodoscope_common`.  It is a separate but PUBLIC repo, so this
+      # checkout needs no credentials.  If it is ever made private again, add
+      #     token: ${{ secrets.WAVEFORM_IO_TOKEN }}
+      # pointing at a fine-grained PAT with Contents:Read on it -- the default GITHUB_TOKEN
+      # is scoped to THIS repo only and will not reach another one.
       - uses: actions/checkout@v5
         with:
           repository: remy-strichartz/waveform-io
           path: .waveform-io
-          token: ${{ secrets.WAVEFORM_IO_TOKEN }}
 
       - uses: actions/setup-python@v6
         with:

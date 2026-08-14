@@ -7,10 +7,11 @@
 #       pip install -e ../waveform-io
 #
 #   reproducible, pinned:
-#       pip install "waveform-io @ git+ssh://git@github.com/remy-strichartz/waveform-io.git@v0.1.0"
+#       pip install "waveform-io @ git+https://github.com/remy-strichartz/waveform-io.git@v0.1.0"
 #
-#   The repo is private, so the git form needs SSH (as written) or a PAT -- pip cannot use
-#   the token that `gh auth` keeps in the keyring.
+#   waveform-io is public, so the git form needs no credentials.  If it is ever made
+#   private again, switch to git+ssh:// -- pip cannot use the token `gh auth` keeps in
+#   the keyring.
 #
 # scipy is used for optimize/signal only.  The scipy>=1.16 floor that waveform-analysis
 # carries does NOT apply here: it exists for scipy.stats.landau, which this repo never calls.
