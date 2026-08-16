@@ -14,14 +14,15 @@ waveform_files/
 # product of this repo -- with them a reader can check a number, or see what a channel's
 # spectrum actually looks like, without re-running an 80-minute batch against data they
 # do not have.  The .h5 subsets living in the same folders are data, and the rules above
-# keep them out.  Regenerate with each pipeline's driver; see
-# energy_reconstruction/README.md for the production commands.
+# keep them out.  Regenerate with this repo's drivers; see
+# preprocessing/README.md for the production commands.
 
 # Python bytecode
 __pycache__/
 *.pyc
 
-# Editable-install metadata (`pip install -e .`, which is optional -- see README)
+# Editable-install metadata.  NOT optional here: `pip install -e ../waveform-io` is how
+# this repo reaches hodoscope_common at all (see README).
 *.egg-info/
 build/
 dist/
@@ -36,10 +37,11 @@ pdf_reports/
 # Results plots live in *_results/ subfolders, so a root-only rule is safe.
 /*.png
 
-# Local editor state -- but NOT the two shared files.  Installing the project is optional
-# (the drivers run as scripts and put the repo root on sys.path at runtime), so without
-# these an editor cannot resolve a single cross-package import on a fresh clone and the
-# checkout looks broken.  They hold relative paths only.
+# Local editor state.  The monorepo tracked .vscode/settings.json + pyrightconfig.json
+# because without them an editor could not resolve a cross-PACKAGE import on a fresh
+# clone; that reason died with the split -- imports here are either intra-repo or come
+# from installed waveform-io, both of which any editor resolves on its own.  The
+# negations are kept so re-adding a shared config later needs no .gitignore change.
 .vscode/*
 !.vscode/settings.json
 !.vscode/pyrightconfig.json
